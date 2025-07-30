@@ -32,7 +32,7 @@ const mainKeyboard = new Keyboard()
   .text("🌐 لینک سایت")
   .resized();
 
-bot.command("شروع", async (ctx) => {
+bot.command("start", async (ctx) => {
   await ctx.reply(
     `با عرض سلام مجدد،
 
