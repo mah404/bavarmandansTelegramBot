@@ -77,7 +77,7 @@ bot.on("message:text", async (ctx) => {
     userStates.set(ctx.from.id, "awaiting_text");
     return ctx.reply(" پیام خود را وارد نمایید.");
   }
-  if (text === "🔒  ارسال پیام به صورت ناشناس") {
+  if (text === "🔒 ارسال پیام به صورت ناشناس") {
     userStates.set(ctx.from.id, "awaiting_anonymous_text");
     return ctx.reply("پیام خود به صورت ناشناس را وارد نمایید   ");
   }
