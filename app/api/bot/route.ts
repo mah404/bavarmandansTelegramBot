@@ -2,18 +2,22 @@ export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 import { Bot, webhookCallback, Keyboard } from "grammy";
-import { type NextRequest } from "next/server";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-if (!token) throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
+if (!token)
+  throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
 
 const bot = new Bot(token);
 
 // آی‌دی گروه یا سوپرگروهی که فقط ادمین‌ها حضور دارند
-const TARGET_CHANNEL = "-4815354265"; // ← make sure this is correct
+//const TARGET_CHANNEL = "-1002874971287";
+const TARGET_CHANNEL = "-4815354265";
 
 // وضعیت کاربر در جریان گفت‌وگو
-const userStates = new Map<number, "awaiting_file" | "awaiting_text" | "awaiting_anonymous_text">();
+const userStates = new Map<
+  number,
+  "awaiting_file" | "awaiting_text" | "awaiting_anonymous_text"
+>();
 
 // نگه‌داشتن لینک بین پیام ارسالی در گروه و آی‌دی کاربر برای پاسخ ادمین
 const messageMap = new Map<number, number>(); // groupMessageId -> userId
@@ -45,10 +49,11 @@ bot.command("start", async (ctx) => {
 /* ─────────────────────  منوی اصلی  ───────────────────── */
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
+
+  // اگر پیام در گروه ادمین‌هاست و روی یک پیام ریپلای شده، یعنی ادمین پاسخ می‌دهد
   const isGroup = ctx.chat.id.toString() === TARGET_CHANNEL;
   const replied = ctx.message.reply_to_message;
 
-  // پاسخ ادمین به پیام کاربر
   if (isGroup && replied) {
     const uid = messageMap.get(replied.message_id);
     if (uid) {
@@ -57,12 +62,11 @@ bot.on("message:text", async (ctx) => {
         await ctx.reply("پاسخ برای کاربر ارسال شد ✅", {
           reply_to_message_id: ctx.message.message_id,
         });
-      } catch (err) {
-        console.error("❌ Error sending admin reply:", err);
+      } catch {
         await ctx.reply("❌ خطا در ارسال پاسخ به کاربر.");
       }
     }
-    return;
+    return; // ادامه نده چون این پیام مخصوص گروه بود
   }
 
   /* ────── گزینه‌های کاربر ────── */
@@ -70,33 +74,24 @@ bot.on("message:text", async (ctx) => {
     userStates.set(ctx.from.id, "awaiting_file");
     return ctx.reply("لطفاً فایل PDF خود را ارسال کنید.");
   }
-
   if (text === "💬 ارسال پیام") {
     userStates.set(ctx.from.id, "awaiting_text");
     return ctx.reply(" پیام خود را وارد نمایید.");
   }
-
   if (text === "🔒 ارسال پیام به صورت ناشناس") {
     userStates.set(ctx.from.id, "awaiting_anonymous_text");
-    return ctx.reply("پیام خود به صورت ناشناس را وارد نمایید");
+    return ctx.reply("پیام خود به صورت ناشناس را وارد نمایید   ");
   }
-
   if (text === "ℹ️ درباره ما") {
     return ctx.reply(
       "این پیام رسان جهت ارتباط مستقیم با مدیران مجموعه تهیه گردیده است. پیشاپیش از حسن استفاده شما قدردانی می‌نماییم."
     );
   }
-
   if (text === "🌐 لینک سایت") {
     return ctx.reply("برای بازدید از سایت ما کلیک کنید:", {
       reply_markup: {
         inline_keyboard: [
-          [
-            {
-              text: "ورود به سایت",
-              url: "https://bavarmandanclubhouse.vercel.app/",
-            },
-          ],
+          [{ text: "ورود به سایت", url: "https://bavarmandanclubhouse.vercel.app/" }],
         ],
       },
     });
@@ -105,10 +100,14 @@ bot.on("message:text", async (ctx) => {
   /* ────── پردازش بر اساس وضعیت ────── */
   const state = userStates.get(ctx.from.id);
 
-  // دریافت فایل PDF
+  // 1) دریافت فایل PDF
   if (state === "awaiting_file") {
-    if (ctx.message.document && ctx.message.document.mime_type === "application/pdf") {
+    if (
+      ctx.message.document &&
+      ctx.message.document.mime_type === "application/pdf"
+    ) {
       try {
+        // forward باعث نمایش اسم کاربر می‌شود. همین رفتار حفظ شود.
         const sent = await ctx.api.forwardMessage(
           TARGET_CHANNEL,
           ctx.chat.id,
@@ -116,28 +115,28 @@ bot.on("message:text", async (ctx) => {
         );
         messageMap.set(sent.message_id, ctx.from.id);
         await ctx.reply("فایل شما ارسال شد. متشکرم!");
-      } catch (err) {
-        console.error("❌ Error sending PDF:", err);
+      } catch {
         await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.");
       }
     } else {
-      await ctx.reply("فقط فایل PDF مجاز است. لطفاً مجدداً امتحان کنید.");
+      await ctx.reply("فقط فایل PDF   (: مجاز است. لطفاً مجدداً امتحان کنید.");
     }
     return userStates.delete(ctx.from.id);
   }
 
-  // دریافت پیام معمولی
+  // 2) دریافت پیام معمولی (با هویت کاربر)
   if (state === "awaiting_text") {
     if (ctx.message.text) {
       try {
         const sent = await ctx.api.sendMessage(
           TARGET_CHANNEL,
-          `پیام از ${ctx.from.first_name} (@${ctx.from.username || "بدون‌نام کاربری"}):\n${ctx.message.text}`
+          `پیام از ${ctx.from.first_name} (@${
+            ctx.from.username || "بدون‌نام کاربری"
+          }):\n${ctx.message.text}`
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پیام شما ارسال گردید");
-      } catch (err) {
-        console.error("❌ Error sending regular message:", err);
+        await ctx.reply("پبام شما ارسال گردید");
+      } catch {
         await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.");
       }
     } else {
@@ -146,7 +145,7 @@ bot.on("message:text", async (ctx) => {
     return userStates.delete(ctx.from.id);
   }
 
-  // دریافت پیام ناشناس
+  // 3) دریافت پیام ناشناس
   if (state === "awaiting_anonymous_text") {
     if (ctx.message.text) {
       try {
@@ -156,8 +155,7 @@ bot.on("message:text", async (ctx) => {
         );
         messageMap.set(sent.message_id, ctx.from.id);
         await ctx.reply("پیام ناشناس شما ارسال گردید");
-      } catch (err) {
-        console.error("❌ Error sending anonymous message:", err);
+      } catch {
         await ctx.reply("❌ خطا در ارسال پیام ناشناس. دوباره تلاش کنید.");
       }
     } else {
@@ -167,7 +165,8 @@ bot.on("message:text", async (ctx) => {
   }
 });
 
-/* ─────────────────────  Webhook Handler  ───────────────────── */
+import { type NextRequest } from "next/server";
+
 export async function POST(req: NextRequest) {
   return await webhookCallback(bot, "std/http")(req);
 }
