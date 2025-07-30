@@ -10,8 +10,8 @@ if (!token)
 const bot = new Bot(token);
 
 // آی‌دی گروه یا سوپرگروهی که فقط ادمین‌ها حضور دارند
-//const TARGET_CHANNEL = "-1002874971287";
-const TARGET_CHANNEL = "-4815354265";
+const TARGET_CHANNEL = "-1002874971287";
+//const TARGET_CHANNEL = "-4815354265";
 
 // وضعیت کاربر در جریان گفت‌وگو
 const userStates = new Map<
