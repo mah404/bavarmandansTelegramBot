@@ -75,15 +75,15 @@ bot.on("message:text", async (ctx) => {
   }
   if (text === "💬 ارسال پیام") {
     userStates.set(ctx.from.id, "awaiting_text");
-    return ctx.reply("لطفاً پیام خود را بنویسید.");
+    return ctx.reply(" پیام خود را وارد نمایید.");
   }
-  if (text === "🔒 پیام ناشناس") {
+  if (text === "🔒  ارسال پیام به صورت ناشناس") {
     userStates.set(ctx.from.id, "awaiting_anonymous_text");
-    return ctx.reply("پیام ناشناس شما چیست؟");
+    return ctx.reply("پیام خود به صورت ناشناس را وارد نمایید   ");
   }
   if (text === "ℹ️ درباره ما") {
     return ctx.reply(
-      "این ربات برای برقراری ارتباط سریع و آسان با ادمین ساخته شده است."
+      "این پیام رسان جهت ارتباط مستقیم با مدیران مجموعه تهیه گردیده است. پیشاپیش از حسن استفاده شما قدردانی می‌نماییم."
     );
   }
   if (text === "🌐 لینک سایت") {
