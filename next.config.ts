@@ -1,7 +1,10 @@
-import type { NextConfig } from "next";
+// File: next.config.mjs // [!code focus]
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: { // [!code ++] // [!code focus]
+    serverComponentsExternalPackages: ['grammy'], // [!code ++] // [!code focus]
+  }, // [!code ++] // [!code focus]
+}
 
-export default nextConfig;
+export default nextConfig
