@@ -90,7 +90,7 @@ bot.on("message:text", async (ctx) => {
     return ctx.reply("برای بازدید از سایت ما کلیک کنید:", {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "ورود به سایت", url: "https://canyoutell.vercel.app/" }],
+          [{ text: "ورود به سایت", url: "https://bavarmandanclubhouse.vercel.app/" }],
         ],
       },
     });
@@ -134,7 +134,7 @@ bot.on("message:text", async (ctx) => {
           }):\n${ctx.message.text}`
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پیام شما ارسال شد. متشکرم!");
+        await ctx.reply("پبام شما ارسال گردید");
       } catch {
         await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.");
       }
@@ -153,7 +153,7 @@ bot.on("message:text", async (ctx) => {
           `پیام ناشناس:\n${ctx.message.text}`
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پیام ناشناس شما ارسال شد. متشکرم!");
+        await ctx.reply("پیام ناشناس شما ارسال گردید");
       } catch {
         await ctx.reply("❌ خطا در ارسال پیام ناشناس. دوباره تلاش کنید.");
       }
