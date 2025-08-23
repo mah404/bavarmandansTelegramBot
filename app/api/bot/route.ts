@@ -4,7 +4,8 @@ export const fetchCache = "force-no-store";
 import { Bot, webhookCallback, Keyboard } from "grammy";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-if (!token) throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
+if (!token)
+  throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
 
 const bot = new Bot(token);
 
@@ -79,23 +80,32 @@ bot.on("message:text", async (ctx) => {
 
   // اگر هنوز هیچ گزینه‌ای انتخاب نشده و متن ارسالی جزو منو نیست، فقط تذکر بده و هیچ کاری نکن
   if (!state && !MENU_TEXTS.has(text)) {
-    return ctx.reply("لطفاً ابتدا یکی از گزینه‌ها را از منوی زیر انتخاب کنید.", {
-      reply_markup: mainKeyboard,
-    });
+    return ctx.reply(
+      "🚨 لطفاً ابتدا یکی از گزینه‌ها را از منوی زیر انتخاب کنید.",
+      {
+        reply_markup: mainKeyboard,
+      }
+    );
   }
 
   /* ────── گزینه‌های کاربر (تنها مسیر ورود به حالت‌ها) ────── */
   if (text === "📄 ارسال فایل پی‌دی‌اف") {
     userStates.set(ctx.from.id, "awaiting_file");
-    return ctx.reply("لطفاً فایل PDF خود را ارسال کنید.", { reply_markup: mainKeyboard });
+    return ctx.reply("لطفاً فایل PDF خود را ارسال کنید.", {
+      reply_markup: mainKeyboard,
+    });
   }
   if (text === "💬 ارسال پیام") {
     userStates.set(ctx.from.id, "awaiting_text");
-    return ctx.reply("پیام خود را وارد نمایید.", { reply_markup: mainKeyboard });
+    return ctx.reply("پیام خود را وارد نمایید.", {
+      reply_markup: mainKeyboard,
+    });
   }
   if (text === "🔒 ارسال پیام به صورت ناشناس") {
     userStates.set(ctx.from.id, "awaiting_anonymous_text");
-    return ctx.reply("پیام ناشناس خود را وارد نمایید.", { reply_markup: mainKeyboard });
+    return ctx.reply("پیام ناشناس خود را وارد نمایید.", {
+      reply_markup: mainKeyboard,
+    });
   }
   if (text === "ℹ️ درباره ما") {
     return ctx.reply(
@@ -106,7 +116,14 @@ bot.on("message:text", async (ctx) => {
   if (text === "🌐 لینک سایت") {
     return ctx.reply("برای بازدید از سایت ما کلیک کنید:", {
       reply_markup: {
-        inline_keyboard: [[{ text: "ورود به سایت", url: "https://bavarmandanclubhouse.vercel.app/" }]],
+        inline_keyboard: [
+          [
+            {
+              text: "ورود به سایت",
+              url: "https://bavarmandanclubhouse.vercel.app/",
+            },
+          ],
+        ],
       },
     });
   }
@@ -115,7 +132,10 @@ bot.on("message:text", async (ctx) => {
 
   // 1) دریافت فایل PDF
   if (state === "awaiting_file") {
-    if (ctx.message.document && ctx.message.document.mime_type === "application/pdf") {
+    if (
+      ctx.message.document &&
+      ctx.message.document.mime_type === "application/pdf"
+    ) {
       try {
         const sent = await ctx.api.forwardMessage(
           TARGET_CHANNEL,
@@ -123,10 +143,14 @@ bot.on("message:text", async (ctx) => {
           ctx.message.message_id
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("فایل شما ارسال شد. متشکرم!", { reply_markup: mainKeyboard });
+        await ctx.reply("فایل شما ارسال شد. متشکرم!", {
+          reply_markup: mainKeyboard,
+        });
         userStates.delete(ctx.from.id); // فقط پس از موفقیت پاک کن
       } catch {
-        await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
+        await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.", {
+          reply_markup: mainKeyboard,
+        });
         // حالت را نگه دار تا کاربر دوباره فایل صحیح بفرستد
       }
     } else {
@@ -144,16 +168,24 @@ bot.on("message:text", async (ctx) => {
       try {
         const sent = await ctx.api.sendMessage(
           TARGET_CHANNEL,
-          `پیام از ${ctx.from.first_name} (@${ctx.from.username || "بدون‌نام کاربری"}):\n${ctx.message.text}`
+          `پیام از ${ctx.from.first_name} (@${
+            ctx.from.username || "بدون‌نام کاربری"
+          }):\n${ctx.message.text}`
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پیام شما ارسال گردید.", { reply_markup: mainKeyboard });
+        await ctx.reply("پیام شما ارسال گردید.", {
+          reply_markup: mainKeyboard,
+        });
         userStates.delete(ctx.from.id);
       } catch {
-        await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
+        await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.", {
+          reply_markup: mainKeyboard,
+        });
       }
     } else {
-      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.", { reply_markup: mainKeyboard });
+      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.", {
+        reply_markup: mainKeyboard,
+      });
       // حالت را نگه می‌داریم
     }
     return;
@@ -163,9 +195,14 @@ bot.on("message:text", async (ctx) => {
   if (state === "awaiting_anonymous_text") {
     if (ctx.message.text) {
       try {
-        const sent = await ctx.api.sendMessage(TARGET_CHANNEL, `پیام ناشناس:\n${ctx.message.text}`);
+        const sent = await ctx.api.sendMessage(
+          TARGET_CHANNEL,
+          `پیام ناشناس:\n${ctx.message.text}`
+        );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پیام ناشناس شما ارسال گردید.", { reply_markup: mainKeyboard });
+        await ctx.reply("پیام ناشناس شما ارسال گردید.", {
+          reply_markup: mainKeyboard,
+        });
         userStates.delete(ctx.from.id);
       } catch {
         await ctx.reply("❌ خطا در ارسال پیام ناشناس. دوباره تلاش کنید.", {
@@ -173,7 +210,9 @@ bot.on("message:text", async (ctx) => {
         });
       }
     } else {
-      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.", { reply_markup: mainKeyboard });
+      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.", {
+        reply_markup: mainKeyboard,
+      });
       // حالت را نگه می‌داریم
     }
     return;
