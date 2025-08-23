@@ -66,7 +66,7 @@ bot.on("message:text", async (ctx) => {
         await ctx.reply("❌ خطا در ارسال پاسخ به کاربر.");
       }
     }
-    return; // ادامه نده چون این پیام مخصوص گروه بود
+    return;
   }
 
   /* ────── گزینه‌های کاربر ────── */
@@ -91,7 +91,12 @@ bot.on("message:text", async (ctx) => {
     return ctx.reply("برای بازدید از سایت ما کلیک کنید:", {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "ورود به سایت", url: "https://bavarmandanclubhouse.vercel.app/" }],
+          [
+            {
+              text: "ورود به سایت",
+              url: "https://bavarmandanclubhouse.vercel.app/",
+            },
+          ],
         ],
       },
     });
