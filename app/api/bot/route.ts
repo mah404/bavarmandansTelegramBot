@@ -4,22 +4,18 @@ export const fetchCache = "force-no-store";
 import { Bot, webhookCallback, Keyboard } from "grammy";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-if (!token)
-  throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
+if (!token) throw new Error("TELEGRAM_BOT_TOKEN environment variable not found.");
 
 const bot = new Bot(token);
 
-// آی‌دی گروه یا سوپرگروهی که فقط ادمین‌ها حضور دارند
-//const TARGET_CHANNEL = "-1002874971287";
+// const TARGET_CHANNEL = "-1002874971287";
 const TARGET_CHANNEL = "-1002825832693";
 
-// وضعیت کاربر در جریان گفت‌وگو
 const userStates = new Map<
   number,
   "awaiting_file" | "awaiting_text" | "awaiting_anonymous_text"
 >();
 
-// نگه‌داشتن لینک بین پیام ارسالی در گروه و آی‌دی کاربر برای پاسخ ادمین
 const messageMap = new Map<number, number>(); // groupMessageId -> userId
 
 /* ─────────────────────  کیبورد اصلی  ───────────────────── */
@@ -31,7 +27,18 @@ const mainKeyboard = new Keyboard()
   .row()
   .text("ℹ️ درباره ما")
   .text("🌐 لینک سایت")
-  .resized();
+  // UX helpers: persistent keyboard + input placeholder
+  .resized()
+  .persistent(true)
+  .placeholder("یکی از گزینه‌ها را انتخاب کنید…");
+
+const MENU_TEXTS = new Set([
+  "📄 ارسال فایل پی‌دی‌اف",
+  "💬 ارسال پیام",
+  "🔒 ارسال پیام به صورت ناشناس",
+  "ℹ️ درباره ما",
+  "🌐 لینک سایت",
+]);
 
 bot.command("start", async (ctx) => {
   await ctx.reply(
@@ -40,17 +47,15 @@ bot.command("start", async (ctx) => {
 جهت برقراری ارتباط یکی از گزینه‌های موجود را انتخاب نمایید. 
 
 با تشکر`,
-    {
-      reply_markup: mainKeyboard,
-    }
+    { reply_markup: mainKeyboard }
   );
 });
 
-/* ─────────────────────  منوی اصلی  ───────────────────── */
+/* ─────────────────────  منوی اصلی و منطق حالت‌ها  ───────────────────── */
 bot.on("message:text", async (ctx) => {
   const text = ctx.message.text;
 
-  // اگر پیام در گروه ادمین‌هاست و روی یک پیام ریپلای شده، یعنی ادمین پاسخ می‌دهد
+  // پاسخ ادمین در گروه ادمین‌ها (روی یک پیام ریپلای شده)
   const isGroup = ctx.chat.id.toString() === TARGET_CHANNEL;
   const replied = ctx.message.reply_to_message;
 
@@ -69,64 +74,68 @@ bot.on("message:text", async (ctx) => {
     return;
   }
 
-  /* ────── گزینه‌های کاربر ────── */
+  /* ────── تنها کلیدها قبل از انتخاب حالت مجازند ────── */
+  const state = userStates.get(ctx.from.id);
+
+  // اگر هنوز هیچ گزینه‌ای انتخاب نشده و متن ارسالی جزو منو نیست، فقط تذکر بده و هیچ کاری نکن
+  if (!state && !MENU_TEXTS.has(text)) {
+    return ctx.reply("لطفاً ابتدا یکی از گزینه‌ها را از منوی زیر انتخاب کنید.", {
+      reply_markup: mainKeyboard,
+    });
+  }
+
+  /* ────── گزینه‌های کاربر (تنها مسیر ورود به حالت‌ها) ────── */
   if (text === "📄 ارسال فایل پی‌دی‌اف") {
     userStates.set(ctx.from.id, "awaiting_file");
-    return ctx.reply("لطفاً فایل PDF خود را ارسال کنید.");
+    return ctx.reply("لطفاً فایل PDF خود را ارسال کنید.", { reply_markup: mainKeyboard });
   }
   if (text === "💬 ارسال پیام") {
     userStates.set(ctx.from.id, "awaiting_text");
-    return ctx.reply(" پیام خود را وارد نمایید.");
+    return ctx.reply("پیام خود را وارد نمایید.", { reply_markup: mainKeyboard });
   }
   if (text === "🔒 ارسال پیام به صورت ناشناس") {
     userStates.set(ctx.from.id, "awaiting_anonymous_text");
-    return ctx.reply("پیام خود به صورت ناشناس را وارد نمایید   ");
+    return ctx.reply("پیام ناشناس خود را وارد نمایید.", { reply_markup: mainKeyboard });
   }
   if (text === "ℹ️ درباره ما") {
     return ctx.reply(
-      "این پیام رسان جهت ارتباط مستقیم با مدیران مجموعه تهیه گردیده است. پیشاپیش از حسن استفاده شما قدردانی می‌نماییم."
+      "این پیام‌رسان جهت ارتباط مستقیم با مدیران مجموعه تهیه گردیده است. پیشاپیش از حسن استفاده شما قدردانی می‌نماییم.",
+      { reply_markup: mainKeyboard }
     );
   }
   if (text === "🌐 لینک سایت") {
     return ctx.reply("برای بازدید از سایت ما کلیک کنید:", {
       reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "ورود به سایت",
-              url: "https://bavarmandanclubhouse.vercel.app/",
-            },
-          ],
-        ],
+        inline_keyboard: [[{ text: "ورود به سایت", url: "https://bavarmandanclubhouse.vercel.app/" }]],
       },
     });
   }
 
   /* ────── پردازش بر اساس وضعیت ────── */
-  const state = userStates.get(ctx.from.id);
 
   // 1) دریافت فایل PDF
   if (state === "awaiting_file") {
-    if (
-      ctx.message.document &&
-      ctx.message.document.mime_type === "application/pdf"
-    ) {
+    if (ctx.message.document && ctx.message.document.mime_type === "application/pdf") {
       try {
-        // forward باعث نمایش اسم کاربر می‌شود. همین رفتار حفظ شود.
         const sent = await ctx.api.forwardMessage(
           TARGET_CHANNEL,
           ctx.chat.id,
           ctx.message.message_id
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("فایل شما ارسال شد. متشکرم!");
+        await ctx.reply("فایل شما ارسال شد. متشکرم!", { reply_markup: mainKeyboard });
+        userStates.delete(ctx.from.id); // فقط پس از موفقیت پاک کن
       } catch {
-        await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.");
+        await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
+        // حالت را نگه دار تا کاربر دوباره فایل صحیح بفرستد
       }
     } else {
-      await ctx.reply("فقط فایل PDF   (: مجاز است. لطفاً مجدداً امتحان کنید.");
+      await ctx.reply("تنها فایل PDF مجاز است. لطفاً مجدداً امتحان کنید.", {
+        reply_markup: mainKeyboard,
+      });
+      // حالت را نگه می‌داریم
     }
-    return userStates.delete(ctx.from.id);
+    return;
   }
 
   // 2) دریافت پیام معمولی (با هویت کاربر)
@@ -135,43 +144,56 @@ bot.on("message:text", async (ctx) => {
       try {
         const sent = await ctx.api.sendMessage(
           TARGET_CHANNEL,
-          `پیام از ${ctx.from.first_name} (@${
-            ctx.from.username || "بدون‌نام کاربری"
-          }):\n${ctx.message.text}`
+          `پیام از ${ctx.from.first_name} (@${ctx.from.username || "بدون‌نام کاربری"}):\n${ctx.message.text}`
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پبام شما ارسال گردید");
+        await ctx.reply("پیام شما ارسال گردید.", { reply_markup: mainKeyboard });
+        userStates.delete(ctx.from.id);
       } catch {
-        await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.");
+        await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
       }
     } else {
-      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.");
+      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.", { reply_markup: mainKeyboard });
+      // حالت را نگه می‌داریم
     }
-    return userStates.delete(ctx.from.id);
+    return;
   }
 
   // 3) دریافت پیام ناشناس
   if (state === "awaiting_anonymous_text") {
     if (ctx.message.text) {
       try {
-        const sent = await ctx.api.sendMessage(
-          TARGET_CHANNEL,
-          `پیام ناشناس:\n${ctx.message.text}`
-        );
+        const sent = await ctx.api.sendMessage(TARGET_CHANNEL, `پیام ناشناس:\n${ctx.message.text}`);
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("پیام ناشناس شما ارسال گردید");
+        await ctx.reply("پیام ناشناس شما ارسال گردید.", { reply_markup: mainKeyboard });
+        userStates.delete(ctx.from.id);
       } catch {
-        await ctx.reply("❌ خطا در ارسال پیام ناشناس. دوباره تلاش کنید.");
+        await ctx.reply("❌ خطا در ارسال پیام ناشناس. دوباره تلاش کنید.", {
+          reply_markup: mainKeyboard,
+        });
       }
     } else {
-      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.");
+      await ctx.reply("لطفاً فقط پیام متنی ارسال کنید.", { reply_markup: mainKeyboard });
+      // حالت را نگه می‌داریم
     }
-    return userStates.delete(ctx.from.id);
+    return;
   }
 });
 
-import { type NextRequest } from "next/server";
+// (اختیاری) اگر فایل/عکس/ویدئو بفرستند زمانی که حالت انتخاب نشده، تذکر بده
+bot.on("message", async (ctx, next) => {
+  const state = userStates.get(ctx.from.id);
+  if (!state) {
+    // پیام‌های غیرمتنی یا متنی که به منو نمی‌خورد، اینجا هم می‌آیند
+    await ctx.reply("برای شروع، یکی از گزینه‌ها را از منو انتخاب کنید.", {
+      reply_markup: mainKeyboard,
+    });
+    return;
+  }
+  return next();
+});
 
+import { type NextRequest } from "next/server";
 export async function POST(req: NextRequest) {
   return await webhookCallback(bot, "std/http")(req);
 }
