@@ -120,7 +120,7 @@ bot.on("message:text", async (ctx) => {
           [
             {
               text: "ورود به سایت",
-              url: "https://bavarmandanclubhouse.vercel.app/",
+              url: "https://www.bavarmandan.com/",
             },
           ],
         ],
