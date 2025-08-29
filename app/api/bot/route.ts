@@ -3,7 +3,14 @@
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-import { Bot, webhookCallback, Keyboard, InlineKeyboard, Composer } from "grammy";
+import {
+  Bot,
+  webhookCallback,
+  Keyboard,
+  InlineKeyboard,
+  Composer,
+  ReplyKeyboardRemove,
+} from "grammy";
 import { type NextRequest } from "next/server";
 
 /* ─────────────────────  ENV & BOT  ───────────────────── */
@@ -19,8 +26,8 @@ const TARGET_CHANNEL = "-1002825832693";
 /* ─────────────────────  STATE  ───────────────────── */
 type UserState = "awaiting_file" | "awaiting_text" | "awaiting_anonymous_text";
 
-const userStates = new Map<number, UserState>();      // per-user flow state (only for private chats)
-const messageMap = new Map<number, number>();         // groupMessageId -> userId (for admin replies)
+const userStates = new Map<number, UserState>(); // per-user flow state (only for private chats)
+const messageMap = new Map<number, number>(); // groupMessageId -> userId (for admin replies)
 
 /* ─────────────────────  UI  ───────────────────── */
 const mainKeyboard = new Keyboard()
@@ -44,8 +51,8 @@ const MENU_TEXTS = new Set([
 ]);
 
 /* ─────────────────────  ROUTING BY CHAT  ───────────────────── */
-const adminGroup = new Composer();   // messages from the admin group/supergroup
-const privateChat = new Composer();  // messages from private (user) chats
+const adminGroup = new Composer(); // messages from the admin group/supergroup
+const privateChat = new Composer(); // messages from private (user) chats
 
 bot.use((ctx, next) => {
   const chatId = ctx.chat?.id?.toString();
@@ -79,13 +86,26 @@ bot.command("start", async (ctx) => {
   );
 });
 
+/* ─────────────────────  ADMIN GROUP COMMANDS  ───────────────────── */
+/** Run this once in the admin group: `/clearkb` to clear any stuck reply keyboard. */
+adminGroup.command("clearkb", async (ctx) => {
+  if (ctx.chat.id.toString() !== TARGET_CHANNEL) return;
+  await ctx.reply("⌨️ Keyboard entfernt / کیبورد حذف شد.", {
+    reply_markup: new ReplyKeyboardRemove(),
+  });
+});
+
 /* ─────────────────────  ADMIN GROUP LOGIC  ─────────────────────
    - Only handle replies to messages that the bot posted (forwarded/sent).
    - Ignore all non-reply chatter in the group.
 ------------------------------------------------------------------ */
 adminGroup.on("message:text", async (ctx) => {
   const replied = ctx.message.reply_to_message;
-  if (!replied) return; // ignore normal chatter
+  if (!replied) {
+    // Ensure no keyboard persists here (belt & suspenders)
+    await ctx.reply(".", { reply_markup: new ReplyKeyboardRemove() });
+    return;
+  }
 
   const uid = messageMap.get(replied.message_id);
   if (!uid) return; // not a tracked bot message
@@ -94,15 +114,19 @@ adminGroup.on("message:text", async (ctx) => {
     await ctx.api.sendMessage(uid, `پاسخ ادمین:\n${ctx.message.text}`);
     await ctx.reply("پاسخ برای کاربر ارسال شد ✅", {
       reply_to_message_id: ctx.message.message_id,
+      reply_markup: new ReplyKeyboardRemove(), // never show user keyboard in group
     });
   } catch {
-    await ctx.reply("❌ خطا در ارسال پاسخ به کاربر.");
+    await ctx.reply("❌ خطا در ارسال پاسخ به کاربر.", {
+      reply_markup: new ReplyKeyboardRemove(),
+    });
   }
 });
 
 // Ignore any other message types in admin group (stickers, photos, etc.)
-adminGroup.on("message", () => {
-  /* no-op */
+adminGroup.on("message", async (ctx) => {
+  // silently ensure no keyboard sticks around
+  await ctx.reply(".", { reply_markup: new ReplyKeyboardRemove() });
 });
 
 /* ─────────────────────  PRIVATE CHAT LOGIC  ───────────────────── */
@@ -148,7 +172,6 @@ privateChat.on("message:text", async (ctx) => {
 
   // 1) Expecting a normal text message (with identity)
   if (state === "awaiting_text") {
-    // safety: in this handler we're already in message:text
     try {
       const displayName = ctx.from.first_name ?? "کاربر";
       const username = ctx.from.username ? `@${ctx.from.username}` : "بدون‌نام کاربری";
@@ -161,7 +184,6 @@ privateChat.on("message:text", async (ctx) => {
       userStates.delete(ctx.from.id);
     } catch {
       await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
-      // keep state so they can retry
     }
     return;
   }
@@ -177,7 +199,6 @@ privateChat.on("message:text", async (ctx) => {
       await ctx.reply("❌ خطا در ارسال پیام ناشناس. دوباره تلاش کنید.", {
         reply_markup: mainKeyboard,
       });
-      // keep state
     }
     return;
   }
@@ -217,7 +238,6 @@ privateChat.on("message", async (ctx, next) => {
         userStates.delete(ctx.from.id); // clear after success
       } catch {
         await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
-        // keep state to retry
       }
       return;
     }
