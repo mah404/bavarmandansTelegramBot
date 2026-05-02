@@ -12,7 +12,6 @@ if (!token) throw new Error("TELEGRAM_BOT_TOKEN environment variable not found."
 
 const bot = new Bot(token);
 
-// ⚠️ Admin group/supergroup chat id (string form, keep the minus):
 // const TARGET_CHANNEL = "-1002874971287";
 const TARGET_CHANNEL = "-1002825832693";
 
