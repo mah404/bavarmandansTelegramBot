@@ -48,7 +48,7 @@ const REPLY_TELEGRAM = "> در تلگرام هستم";
 const REPLY_CURRENT_APP = "> در برنامه جاری";
 const START_TEXT = `با عرض سلام مجدد،
 
-جهت برقراری ارتباط یکی از گزینه‌های موجود را انتخاب نمایید. 
+جهت برقراری ارتباط یکی از گزینه‌های موجود را انتخاب نمایید. ✨
 
 با تشکر`;
 
@@ -100,6 +100,11 @@ function forceReplyMarkup(placeholder: string) {
     input_field_placeholder: placeholder,
   } as const;
 }
+
+const SELECT_OPTION_TEXT = "یکی از گزینه‌های زیر را انتخاب نمایید. ▫️";
+const ASK_REPLY_PREFERENCE_TEXT = "مایل به دریافت پاسخ؟ 📨";
+const MESSAGE_SENT_TEXT = "پیام شما ارسال گردید. ✅";
+const MESSAGE_SEND_ERROR_TEXT = "خطا در ارسال پیام. دوباره تلاش کنید. ⚠️";
 
 const MENU_TEXTS = new Set([
   MENU_IDENTIFIED_MESSAGE,
@@ -182,8 +187,8 @@ function buildFinalPrompt(state: Extract<UserState, { step: "awaiting_message" }
 
   return [
     state.topic === "feedback"
-      ? `پیام ${getModeLabel(state.mode)} خود را وارد نمایید.`
-      : "پیام خود را وارد نمایید.",
+      ? `پیام ${getModeLabel(state.mode)} خود را وارد نمایید. 📝`
+      : "پیام خود را وارد نمایید. 📝",
     "",
     "اطلاعات انتخاب‌شده:",
     `نوع ارسال: ${getModeLabel(state.mode)}`,
@@ -288,7 +293,7 @@ privateChat.on("callback_query:data", async (ctx) => {
         topic: "question",
       });
       await ctx.answerCallbackQuery();
-      await ctx.reply("مایل به دریافت پاسخ؟", {
+      await ctx.reply(ASK_REPLY_PREFERENCE_TEXT, {
         reply_markup: replyPreferenceInlineKeyboard(mode),
       });
       return;
@@ -303,7 +308,7 @@ privateChat.on("callback_query:data", async (ctx) => {
       userStates.set(ctx.from.id, nextState);
       await ctx.answerCallbackQuery();
       await ctx.reply(buildFinalPrompt(nextState), {
-        reply_markup: forceReplyMarkup(`پیام ${getModeLabel(mode)} خود را وارد نمایید.`),
+        reply_markup: forceReplyMarkup(`پیام ${getModeLabel(mode)} خود را وارد نمایید. 📝`),
       });
       return;
     }
@@ -324,7 +329,7 @@ privateChat.on("callback_query:data", async (ctx) => {
     userStates.set(ctx.from.id, nextState);
     await ctx.answerCallbackQuery();
     await ctx.reply(buildFinalPrompt(nextState), {
-      reply_markup: forceReplyMarkup("پیام خود را وارد نمایید."),
+      reply_markup: forceReplyMarkup("پیام خود را وارد نمایید. 📝"),
     });
     return;
   }
@@ -350,10 +355,10 @@ privateChat.on("message:text", async (ctx) => {
         buildGroupMessage(repliedPromptState, ctx.message.text, ctx.from)
       );
       messageMap.set(sent.message_id, ctx.from.id);
-      await ctx.reply("پیام شما ارسال گردید.", { reply_markup: mainKeyboard });
+      await ctx.reply(MESSAGE_SENT_TEXT, { reply_markup: mainKeyboard });
       userStates.delete(ctx.from.id);
     } catch {
-      await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
+      await ctx.reply(MESSAGE_SEND_ERROR_TEXT, { reply_markup: mainKeyboard });
     }
     return;
   }
@@ -362,37 +367,37 @@ privateChat.on("message:text", async (ctx) => {
   if (MENU_TEXTS.has(text)) {
     if (text === MENU_PDF) {
       userStates.set(ctx.from.id, { step: "awaiting_file" });
-      return ctx.reply("لطفاً فایل PDF خود را ارسال کنید.", { reply_markup: mainKeyboard });
+      return ctx.reply("لطفاً فایل PDF خود را ارسال کنید. 📄", { reply_markup: mainKeyboard });
     }
     if (text === MENU_IDENTIFIED_MESSAGE) {
       userStates.delete(ctx.from.id);
-      return ctx.reply("یکی از گزینه‌های زیر را انتخاب نمایید.", {
+      return ctx.reply(SELECT_OPTION_TEXT, {
         reply_markup: topicInlineKeyboard("identified"),
       });
     }
     if (text === MENU_ANONYMOUS_MESSAGE) {
       userStates.delete(ctx.from.id);
-      return ctx.reply("یکی از گزینه‌های زیر را انتخاب نمایید.", {
+      return ctx.reply(SELECT_OPTION_TEXT, {
         reply_markup: topicInlineKeyboard("anonymous"),
       });
     }
     if (text === MENU_ABOUT) {
       userStates.delete(ctx.from.id);
       return ctx.reply(
-        "این پیام‌رسان جهت ارتباط مستقیم با مدیران مجموعه تهیه گردیده است. پیشاپیش از حسن استفاده شما قدردانی می‌نماییم.",
+        "این پیام‌رسان جهت ارتباط مستقیم با مدیران مجموعه تهیه گردیده است. پیشاپیش از حسن استفاده شما قدردانی می‌نماییم. ℹ️",
         { reply_markup: mainKeyboard }
       );
     }
     if (text === MENU_WEBSITE) {
       userStates.delete(ctx.from.id);
       const ik = new InlineKeyboard().url("ورود به سایت", "https://www.bavarmandan.com/");
-      return ctx.reply("برای بازدید از سایت ما کلیک کنید:", { reply_markup: ik });
+      return ctx.reply("برای بازدید از سایت ما کلیک کنید: 🔗", { reply_markup: ik });
     }
   }
 
   /* ────── If no state was chosen yet, nudge user to pick a menu item ────── */
   if (!state) {
-    return ctx.reply("🚨 لطفاً ابتدا یکی از گزینه‌ها را از منوی زیر انتخاب کنید.", {
+    return ctx.reply("لطفاً ابتدا یکی از گزینه‌ها را از منوی زیر انتخاب کنید. ▫️", {
       reply_markup: mainKeyboard,
     });
   }
@@ -409,7 +414,7 @@ privateChat.on("message:text", async (ctx) => {
         mode: state.mode,
         topic: "question",
       });
-      return ctx.reply("مایل به دریافت پاسخ؟", {
+      return ctx.reply(ASK_REPLY_PREFERENCE_TEXT, {
         reply_markup: replyPreferenceInlineKeyboard(state.mode),
       });
     }
@@ -423,11 +428,11 @@ privateChat.on("message:text", async (ctx) => {
       userStates.set(ctx.from.id, nextState);
 
       return ctx.reply(buildFinalPrompt(nextState), {
-        reply_markup: forceReplyMarkup(`پیام ${getModeLabel(state.mode)} خود را وارد نمایید.`),
+        reply_markup: forceReplyMarkup(`پیام ${getModeLabel(state.mode)} خود را وارد نمایید. 📝`),
       });
     }
 
-    return ctx.reply("لطفاً یکی از گزینه‌های زیر را انتخاب نمایید.", {
+    return ctx.reply(SELECT_OPTION_TEXT, {
       reply_markup: topicKeyboard,
     });
   }
@@ -437,7 +442,7 @@ privateChat.on("message:text", async (ctx) => {
     const replyPreference = parseReplyPreference(text);
 
     if (!replyPreference) {
-      return ctx.reply("لطفاً یکی از گزینه‌های زیر را انتخاب نمایید.", {
+      return ctx.reply(SELECT_OPTION_TEXT, {
         reply_markup: replyPreferenceKeyboard,
       });
     }
@@ -451,7 +456,7 @@ privateChat.on("message:text", async (ctx) => {
     userStates.set(ctx.from.id, nextState);
 
     return ctx.reply(buildFinalPrompt(nextState), {
-      reply_markup: forceReplyMarkup("پیام خود را وارد نمایید."),
+      reply_markup: forceReplyMarkup("پیام خود را وارد نمایید. 📝"),
     });
   }
 
@@ -463,10 +468,10 @@ privateChat.on("message:text", async (ctx) => {
         buildGroupMessage(state, ctx.message.text, ctx.from)
       );
       messageMap.set(sent.message_id, ctx.from.id);
-      await ctx.reply("پیام شما ارسال گردید.", { reply_markup: mainKeyboard });
+      await ctx.reply(MESSAGE_SENT_TEXT, { reply_markup: mainKeyboard });
       userStates.delete(ctx.from.id);
     } catch {
-      await ctx.reply("❌ خطا در ارسال پیام. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
+      await ctx.reply(MESSAGE_SEND_ERROR_TEXT, { reply_markup: mainKeyboard });
       // keep state so they can retry
     }
     return;
@@ -474,7 +479,7 @@ privateChat.on("message:text", async (ctx) => {
 
   // 4) If state is awaiting_file but user typed text, remind them
   if (state.step === "awaiting_file") {
-    return ctx.reply("تنها فایل PDF مجاز است. لطفاً فایل خود را ارسال کنید.", {
+    return ctx.reply("تنها فایل PDF مجاز است. لطفاً فایل خود را ارسال کنید. 📄", {
       reply_markup: mainKeyboard,
     });
   }
@@ -486,7 +491,7 @@ privateChat.on("message", async (ctx, next) => {
 
   // If no state set yet, only nudge once for any non-menu input
   if (!state && ctx.chat.type === "private") {
-    await ctx.reply("برای شروع، یکی از گزینه‌ها را از منو انتخاب کنید.", {
+    await ctx.reply("برای شروع، یکی از گزینه‌ها را از منو انتخاب کنید. ▫️", {
       reply_markup: mainKeyboard,
     });
     return;
@@ -505,38 +510,38 @@ privateChat.on("message", async (ctx, next) => {
           ctx.message.message_id
         );
         messageMap.set(sent.message_id, ctx.from.id);
-        await ctx.reply("فایل شما ارسال شد. متشکرم!", { reply_markup: mainKeyboard });
+        await ctx.reply("فایل شما ارسال شد. متشکرم. ✅", { reply_markup: mainKeyboard });
         userStates.delete(ctx.from.id); // clear after success
       } catch {
-        await ctx.reply("❌ خطا در ارسال فایل. دوباره تلاش کنید.", { reply_markup: mainKeyboard });
+        await ctx.reply("خطا در ارسال فایل. دوباره تلاش کنید. ⚠️", { reply_markup: mainKeyboard });
         // keep state to retry
       }
       return;
     }
 
     // Not a PDF → ask again, keep state
-    await ctx.reply("تنها فایل PDF مجاز است. لطفاً مجدداً امتحان کنید.", {
+    await ctx.reply("تنها فایل PDF مجاز است. لطفاً مجدداً امتحان کنید. 📄", {
       reply_markup: mainKeyboard,
     });
     return;
   }
 
   if (state.step === "awaiting_topic") {
-    await ctx.reply("لطفاً یکی از گزینه‌های زیر را انتخاب نمایید.", {
+    await ctx.reply(SELECT_OPTION_TEXT, {
       reply_markup: topicKeyboard,
     });
     return;
   }
 
   if (state.step === "awaiting_reply_preference") {
-    await ctx.reply("لطفاً یکی از گزینه‌های زیر را انتخاب نمایید.", {
+    await ctx.reply(SELECT_OPTION_TEXT, {
       reply_markup: replyPreferenceKeyboard,
     });
     return;
   }
 
   if (state.step === "awaiting_message") {
-    await ctx.reply("لطفاً پیام خود را به صورت متن ارسال کنید.", {
+    await ctx.reply("لطفاً پیام خود را به صورت متن ارسال کنید. 📝", {
       reply_markup: removeKeyboard,
     });
     return;
