@@ -44,8 +44,8 @@ const MENU_WEBSITE = "🌐 لینک سایت";
 const TOPIC_QUESTION = "طرح سوال";
 const TOPIC_FEEDBACK = "انتقادات و پیشنهادات";
 
-const REPLY_TELEGRAM = "در تلگرام هستم";
-const REPLY_CURRENT_APP = "در برنامه جاری";
+const REPLY_TELEGRAM = "> در تلگرام هستم";
+const REPLY_CURRENT_APP = "> در برنامه جاری";
 
 const mainKeyboard = new Keyboard()
   .text(MENU_IDENTIFIED_MESSAGE)
@@ -84,6 +84,27 @@ const MENU_TEXTS = new Set([
   MENU_WEBSITE,
 ]);
 
+function normalizeChoice(text: string) {
+  return text
+    .replace(/[>\u200c\u200e\u200f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseTopic(text: string): MessageTopic | undefined {
+  const normalized = normalizeChoice(text);
+  if (normalized === "طرح سوال" || normalized === "سوال") return "question";
+  if (normalized === TOPIC_FEEDBACK) return "feedback";
+  return undefined;
+}
+
+function parseReplyPreference(text: string): ReplyPreference | undefined {
+  const normalized = normalizeChoice(text);
+  if (normalized === "در تلگرام هستم" || normalized.includes("تلگرام")) return "telegram";
+  if (normalized === "در برنامه جاری" || normalized.includes("برنامه جاری")) return "current_app";
+  return undefined;
+}
+
 function getModeLabel(mode: MessageMode) {
   return mode === "identified" ? "شناس" : "ناشناس";
 }
@@ -93,8 +114,8 @@ function getTopicLabel(topic: MessageTopic) {
 }
 
 function getReplyPreferenceLabel(replyPreference?: ReplyPreference) {
-  if (replyPreference === "telegram") return REPLY_TELEGRAM;
-  if (replyPreference === "current_app") return REPLY_CURRENT_APP;
+  if (replyPreference === "telegram") return "در تلگرام هستم";
+  if (replyPreference === "current_app") return "در برنامه جاری";
   return "ثبت نشده";
 }
 
@@ -239,7 +260,9 @@ privateChat.on("message:text", async (ctx) => {
 
   // 1) Expecting the user to choose question or feedback.
   if (state.step === "awaiting_topic") {
-    if (text === TOPIC_QUESTION) {
+    const topic = parseTopic(text);
+
+    if (topic === "question") {
       userStates.set(ctx.from.id, {
         step: "awaiting_reply_preference",
         mode: state.mode,
@@ -250,7 +273,7 @@ privateChat.on("message:text", async (ctx) => {
       });
     }
 
-    if (text === TOPIC_FEEDBACK) {
+    if (topic === "feedback") {
       userStates.set(ctx.from.id, {
         step: "awaiting_message",
         mode: state.mode,
@@ -270,7 +293,9 @@ privateChat.on("message:text", async (ctx) => {
 
   // 2) Expecting how the user wants to receive a reply for a question.
   if (state.step === "awaiting_reply_preference") {
-    if (text !== REPLY_TELEGRAM && text !== REPLY_CURRENT_APP) {
+    const replyPreference = parseReplyPreference(text);
+
+    if (!replyPreference) {
       return ctx.reply("لطفاً یکی از گزینه‌های زیر را انتخاب نمایید.", {
         reply_markup: replyPreferenceKeyboard,
       });
@@ -280,7 +305,7 @@ privateChat.on("message:text", async (ctx) => {
       step: "awaiting_message",
       mode: state.mode,
       topic: state.topic,
-      replyPreference: text === REPLY_TELEGRAM ? "telegram" : "current_app",
+      replyPreference,
     });
 
     return ctx.reply("پیام خود را وارد نمایید.", { reply_markup: removeKeyboard });
