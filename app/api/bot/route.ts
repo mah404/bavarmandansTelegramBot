@@ -136,16 +136,16 @@ function parseReplyPreference(text: string): ReplyPreference | undefined {
 }
 
 function getModeLabel(mode: MessageMode) {
-  return mode === "identified" ? "شناس" : "ناشناس";
+  return mode === "identified" ? "👤 شناس" : "🔒 ناشناس";
 }
 
 function getTopicLabel(topic: MessageTopic) {
-  return topic === "question" ? TOPIC_QUESTION : TOPIC_FEEDBACK;
+  return topic === "question" ? "❓ طرح سوال" : "🗣️ انتقادات و پیشنهادات";
 }
 
 function getReplyPreferenceLabel(replyPreference?: ReplyPreference) {
-  if (replyPreference === "telegram") return "در تلگرام هستم";
-  if (replyPreference === "current_app") return "در برنامه جاری";
+  if (replyPreference === "telegram") return "📲 در تلگرام هستم";
+  if (replyPreference === "current_app") return "💬 در برنامه جاری";
   return "ثبت نشده";
 }
 
@@ -159,7 +159,7 @@ function buildGroupMessage(
   const identityLine =
     state.mode === "identified"
       ? `فرستنده: ${displayName} (${username})`
-      : "فرستنده: ناشناس";
+      : "فرستنده: 🔒 ناشناس";
 
   const replyLine =
     state.topic === "question"
@@ -168,7 +168,7 @@ function buildGroupMessage(
 
   return [
     `نوع ارسال: ${getModeLabel(state.mode)}`,
-    `موضوع: ${getTopicLabel(state.topic)}`,
+    `موضوع پیام: ${getTopicLabel(state.topic)}`,
     replyLine,
     identityLine,
     "",
@@ -202,8 +202,8 @@ function buildFinalPrompt(state: Extract<UserState, { step: "awaiting_message" }
 function parseFinalPrompt(text?: string): Extract<UserState, { step: "awaiting_message" }> | undefined {
   if (!text?.includes("اطلاعات انتخاب‌شده:")) return undefined;
 
-  const mode = text.includes("نوع ارسال: ناشناس") ? "anonymous" : "identified";
-  const topic = text.includes(`موضوع: ${TOPIC_FEEDBACK}`) ? "feedback" : "question";
+  const mode = text.includes("ناشناس") ? "anonymous" : "identified";
+  const topic = text.includes(TOPIC_FEEDBACK) ? "feedback" : "question";
   const replyPreference = parseReplyPreference(text);
 
   return {
