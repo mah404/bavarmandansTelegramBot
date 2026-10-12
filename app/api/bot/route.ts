@@ -24,7 +24,7 @@ const messageMap = new Map<number, number>();         // groupMessageId -> userI
 /* ─────────────────────  UI  ───────────────────── */
 const mainKeyboard = new Keyboard()
   .text("📄 ارسال فایل پی‌دی‌اف")
-  .text("💬 ارسال پیام")
+  .text("💬 ارسال پیام به صورت شناس")
   .row()
   .text("🔒 ارسال پیام به صورت ناشناس")
   .row()
