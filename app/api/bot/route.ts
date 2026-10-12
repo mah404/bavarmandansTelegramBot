@@ -12,7 +12,7 @@ if (!token) throw new Error("TELEGRAM_BOT_TOKEN environment variable not found."
 
 const bot = new Bot(token);
 
-// const TARGET_CHANNEL = "-1002874971287";
+// const TARGET_CHANNEL = "-1002874971287"; this i sthe test
 const TARGET_CHANNEL = "-1002825832693";
 
 /* ─────────────────────  STATE  ───────────────────── */
@@ -236,3 +236,4 @@ privateChat.on("message", async (ctx, next) => {
 export async function POST(req: NextRequest) {
   return webhookCallback(bot, "std/http")(req);
 }
+
