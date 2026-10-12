@@ -21,7 +21,6 @@ type UserState = "awaiting_file" | "awaiting_text" | "awaiting_anonymous_text";
 const userStates = new Map<number, UserState>();      // per-user flow state (only for private chats)
 const messageMap = new Map<number, number>();         // groupMessageId -> userId (for admin replies)
 
-/* ─────────────────────  UI  ───────────────────── */
 const mainKeyboard = new Keyboard()
   .text("📄 ارسال فایل پی‌دی‌اف")
   .text("💬 ارسال پیام به صورت شناس")
