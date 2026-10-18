@@ -77,7 +77,7 @@ const replyPreferenceKeyboard = new Keyboard()
   .text(REPLY_CURRENT_APP)
   .resized()
   .persistent(true)
-  .placeholder("مایل به دریافت پاسخ؟");
+  .placeholder("مایل به دریافت پاسخ");
 
 const removeKeyboard = { remove_keyboard: true } as const;
 
@@ -102,7 +102,7 @@ function forceReplyMarkup(placeholder: string) {
 }
 
 const SELECT_OPTION_TEXT = "یکی از گزینه‌های زیر را انتخاب نمایید. ▫️";
-const ASK_REPLY_PREFERENCE_TEXT = "مایل به دریافت پاسخ؟ 📨";
+const ASK_REPLY_PREFERENCE_TEXT = "مایل به دریافت پاسخ 📨";
 const MESSAGE_SENT_TEXT = "پیام شما ارسال گردید. ✅";
 const MESSAGE_SEND_ERROR_TEXT = "خطا در ارسال پیام. دوباره تلاش کنید. ⚠️";
 
@@ -180,26 +180,32 @@ function buildGroupMessage(
 }
 
 function buildFinalPrompt(state: Extract<UserState, { step: "awaiting_message" }>) {
-  const replyLine =
-    state.topic === "question"
-      ? `مایل به دریافت پاسخ: ${getReplyPreferenceLabel(state.replyPreference)}`
-      : undefined;
-
-  return [
-    state.topic === "feedback"
-      ? `پیام ${getModeLabel(state.mode)} خود را وارد نمایید. 📝`
-      : "پیام خود را وارد نمایید. 📝",
-    "",
-    "اطلاعات انتخاب‌شده:",
-    `نوع ارسال: ${getModeLabel(state.mode)}`,
-    `موضوع: ${getTopicLabel(state.topic)}`,
-    replyLine,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  // The reply carries the choices in a link entity across server restarts.
+  const flow = ["flow", state.mode, state.topic, state.replyPreference ?? "none"].join("_");
+  const url = `https://t.me/${bot.botInfo.username}?start=${flow}`;
+  return `پیام خود را وارد نمایید. <a href="${url}">📝</a>`;
 }
 
-function parseFinalPrompt(text?: string): Extract<UserState, { step: "awaiting_message" }> | undefined {
+function parseFinalPrompt(
+  text?: string,
+  entities?: readonly { type: string; url?: string }[]
+): Extract<UserState, { step: "awaiting_message" }> | undefined {
+  for (const entity of entities ?? []) {
+    if (entity.type !== "text_link" || !entity.url) continue;
+    const url = new URL(entity.url);
+    if (url.origin !== "https://t.me" || url.pathname !== `/${bot.botInfo.username}`) continue;
+    const match = /^flow_(identified|anonymous)_(question|feedback)_(telegram|current_app|none)$/.exec(
+      url.searchParams.get("start") ?? ""
+    );
+    if (!match) continue;
+    const mode = match[1] as MessageMode;
+    const topic = match[2] as MessageTopic;
+    const replyPreference = match[3] === "none" ? undefined : match[3] as ReplyPreference;
+    if (topic === "question" && !replyPreference) continue;
+    return { step: "awaiting_message", mode, topic, replyPreference };
+  }
+
+  // Accept replies to prompts sent before the display change.
   if (!text?.includes("اطلاعات انتخاب‌شده:")) return undefined;
 
   const mode = text.includes("ناشناس") ? "anonymous" : "identified";
@@ -308,6 +314,7 @@ privateChat.on("callback_query:data", async (ctx) => {
       userStates.set(ctx.from.id, nextState);
       await ctx.answerCallbackQuery();
       await ctx.reply(buildFinalPrompt(nextState), {
+        parse_mode: "HTML",
         reply_markup: forceReplyMarkup(`پیام ${getModeLabel(mode)} خود را وارد نمایید. 📝`),
       });
       return;
@@ -329,6 +336,7 @@ privateChat.on("callback_query:data", async (ctx) => {
     userStates.set(ctx.from.id, nextState);
     await ctx.answerCallbackQuery();
     await ctx.reply(buildFinalPrompt(nextState), {
+      parse_mode: "HTML",
       reply_markup: forceReplyMarkup("پیام خود را وارد نمایید. 📝"),
     });
     return;
@@ -347,7 +355,10 @@ privateChat.on("message:text", async (ctx) => {
     return ctx.reply(START_TEXT, { reply_markup: mainKeyboard });
   }
 
-  const repliedPromptState = parseFinalPrompt(ctx.message.reply_to_message?.text);
+  const replied = ctx.message.reply_to_message;
+  const repliedPromptState = replied?.from?.id === ctx.me.id
+    ? parseFinalPrompt(replied.text, replied.entities)
+    : undefined;
   if (repliedPromptState) {
     try {
       const sent = await ctx.api.sendMessage(
@@ -428,6 +439,7 @@ privateChat.on("message:text", async (ctx) => {
       userStates.set(ctx.from.id, nextState);
 
       return ctx.reply(buildFinalPrompt(nextState), {
+        parse_mode: "HTML",
         reply_markup: forceReplyMarkup(`پیام ${getModeLabel(state.mode)} خود را وارد نمایید. 📝`),
       });
     }
@@ -456,6 +468,7 @@ privateChat.on("message:text", async (ctx) => {
     userStates.set(ctx.from.id, nextState);
 
     return ctx.reply(buildFinalPrompt(nextState), {
+      parse_mode: "HTML",
       reply_markup: forceReplyMarkup("پیام خود را وارد نمایید. 📝"),
     });
   }
