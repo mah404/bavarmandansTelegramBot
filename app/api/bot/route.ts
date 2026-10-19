@@ -5,6 +5,8 @@ export const fetchCache = "force-no-store";
 
 import { Bot, webhookCallback, Keyboard, InlineKeyboard, Composer } from "grammy";
 import { type NextRequest } from "next/server";
+import { createModerationStore, formatRemaining } from "./moderation";
+import { createPinnedModeration } from "./pinned-moderation";
 
 /* ─────────────────────  ENV & BOT  ───────────────────── */
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -33,6 +35,8 @@ type UserState =
 
 const userStates = new Map<number, UserState>();      // per-user flow state (only for private chats)
 const messageMap = new Map<number, number>();         // groupMessageId -> userId (for admin replies)
+const moderation = createModerationStore();
+const pinnedModeration = createPinnedModeration(bot.api, TARGET_CHANNEL, token, moderation, () => bot.botInfo.id);
 
 /* ─────────────────────  UI  ───────────────────── */
 const MENU_IDENTIFIED_MESSAGE = "💬 ارسال پیام به صورت شناس";
@@ -171,6 +175,7 @@ function buildGroupMessage(
     `موضوع پیام: ${getTopicLabel(state.topic)}`,
     replyLine,
     identityLine,
+    `شناسه کاربر: ${moderation.codeFor(from.id)}`,
     "",
     "متن پیام:",
     text,
@@ -255,11 +260,96 @@ bot.command("start", async (ctx) => {
    - Only handle replies to messages that the bot posted (forwarded/sent).
    - Ignore all non-reply chatter in the group.
 ------------------------------------------------------------------ */
+adminGroup.on("message:text", async (ctx, next) => {
+  const isCommand = /^\/(block|unblock|ban1h|blocklist)(?:@\w+)?(?:\s|$)/i.test(ctx.message.text);
+  if (!isCommand && !ctx.message.reply_to_message) return next();
+  if (isCommand) {
+    if (!ctx.from || ctx.message.sender_chat) {
+      await ctx.reply("برای اجرای دستور، با حساب شخصی ادمین پیام دهید. ⚠️");
+      return;
+    }
+    const member = await ctx.api.getChatMember(ctx.chat.id, ctx.from.id);
+    if (member.status !== "creator" && member.status !== "administrator") {
+      await ctx.reply("این دستور فقط برای ادمین‌های گروه فعال است. ⚠️");
+      return;
+    }
+  }
+  try {
+    await pinnedModeration.run(isCommand, next);
+  } catch {
+    await ctx.reply("خواندن یا ذخیره فهرست محدودیت‌ها انجام نشد. پیام مخصوص بات باید پین باشد و بات دسترسی پین داشته باشد. ممکن است ظرفیت پیام هم پر شده باشد. ⚠️");
+  }
+});
+
 adminGroup.on("message:text", async (ctx) => {
   const replied = ctx.message.reply_to_message;
+  const command = /^\/(block|unblock|ban1h|blocklist)(?:@(\w+))?(?:\s+(.*))?\s*$/i.exec(ctx.message.text);
+  if (command) {
+    if (command[2] && command[2].toLowerCase() !== ctx.me.username.toLowerCase()) return;
+    const action = command[1].toLowerCase();
+    if (action === "blocklist") {
+      await pinnedModeration.save(true);
+      const entries = moderation.list();
+      if (!entries.length) {
+        await ctx.reply("فهرست کاربران محدودشده خالی است. ✅");
+        return;
+      }
+      // Keep each page comfortably below Telegram's message size limit.
+      for (let offset = 0; offset < entries.length; offset += 40) {
+        const lines = entries.slice(offset, offset + 40).map(({ code, until }) =>
+          until === null ? `${code} — بلاک دائمی 🚫`
+            : `${code} — بن موقت، باقی‌مانده: ${formatRemaining(until)} ⏳`
+        );
+        await ctx.reply(`فهرست کاربران محدودشده:\n${lines.join("\n")}`);
+      }
+      return;
+    }
+
+    const code = command[3]?.trim();
+    const trustedReply = replied?.from?.id === ctx.me.id;
+    const replyCode = trustedReply
+      ? (replied.text ?? replied.caption ?? "").match(/شناسه کاربر: (U-[A-F0-9]{12})/)?.[1]
+      : undefined;
+    const uid = code ? moderation.userFor(code)
+      : trustedReply ? messageMap.get(replied.message_id) ?? (replyCode ? moderation.userFor(replyCode) : undefined)
+      : undefined;
+    if (!uid) {
+      await ctx.reply("روی پیام ارسالی بات ریپلای کنید یا شناسه معتبر وارد کنید؛ مثال: /block U-123456ABCDEF ⚠️");
+      return;
+    }
+
+    let notification: string;
+    let confirmation: string;
+    if (action === "block") {
+      moderation.block(uid);
+      notification = "امکان ارسال پیام شما به بات مسدود شده است. 🚫";
+      confirmation = "بلاک دائمی شد. 🚫";
+    } else if (action === "ban1h") {
+      moderation.ban1h(uid);
+      notification = "امکان ارسال پیام شما به بات به مدت یک ساعت محدود شده است. پس از این مدت محدودیت خودکار رفع می‌شود. ⏳";
+      confirmation = "به مدت یک ساعت محدود شد. ⏳";
+    } else {
+      moderation.unblock(uid);
+      notification = "محدودیت ارسال پیام شما برطرف شد. برای شروع /start را بزنید. ✅";
+      confirmation = "از محدودیت خارج شد. ✅";
+    }
+    await pinnedModeration.save();
+    userStates.delete(uid);
+    let notified = true;
+    try {
+      await ctx.api.sendMessage(uid, notification);
+    } catch {
+      notified = false;
+    }
+    await ctx.reply(`${moderation.codeFor(uid)} ${confirmation}${notified ? "\nکاربر مطلع شد." : "\nارسال اعلان به کاربر ناموفق بود. ⚠️"}`);
+    return;
+  }
   if (!replied) return; // ignore normal chatter
 
-  const uid = messageMap.get(replied.message_id);
+  const replyCode = replied.from?.id === ctx.me.id
+    ? (replied.text ?? replied.caption ?? "").match(/شناسه کاربر: (U-[A-F0-9]{12})/)?.[1]
+    : undefined;
+  const uid = messageMap.get(replied.message_id) ?? (replyCode ? moderation.userFor(replyCode) : undefined);
   if (!uid) return; // not a tracked bot message
 
   try {
@@ -278,6 +368,31 @@ adminGroup.on("message", () => {
 });
 
 /* ─────────────────────  PRIVATE CHAT LOGIC  ───────────────────── */
+privateChat.use(async (ctx, next) => {
+  if (!ctx.from) return next();
+  try {
+    await pinnedModeration.run(false, async () => {
+      moderation.codeFor(ctx.from!.id);
+      await pinnedModeration.save();
+      await next();
+    });
+  } catch {
+    if (ctx.callbackQuery) await ctx.answerCallbackQuery({ text: "دسترسی موقتاً برقرار نیست. لطفاً کمی بعد تلاش کنید. ⚠️", show_alert: true });
+    else await ctx.reply("دسترسی موقتاً برقرار نیست. لطفاً کمی بعد تلاش کنید. ⚠️");
+  }
+});
+
+privateChat.use(async (ctx, next) => {
+  if (!ctx.from) return next();
+  const until = moderation.status(ctx.from.id);
+  if (until === undefined) return next();
+  const text = until === null
+    ? "امکان ارسال پیام شما به بات مسدود است. 🚫"
+    : `امکان ارسال پیام شما موقتاً محدود است. زمان باقی‌مانده: ${formatRemaining(until)} ⏳`;
+  if (ctx.callbackQuery) await ctx.answerCallbackQuery({ text, show_alert: true });
+  else await ctx.reply(text);
+});
+
 privateChat.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
   const [kind, mode, value] = data.split(":") as [
@@ -523,6 +638,12 @@ privateChat.on("message", async (ctx, next) => {
           ctx.message.message_id
         );
         messageMap.set(sent.message_id, ctx.from.id);
+        const header = await ctx.api.sendMessage(
+          TARGET_CHANNEL,
+          `فایل PDF 📄\nشناسه کاربر: ${moderation.codeFor(ctx.from.id)}`,
+          { reply_to_message_id: sent.message_id }
+        );
+        messageMap.set(header.message_id, ctx.from.id);
         await ctx.reply("فایل شما ارسال شد. متشکرم. ✅", { reply_markup: mainKeyboard });
         userStates.delete(ctx.from.id); // clear after success
       } catch {
