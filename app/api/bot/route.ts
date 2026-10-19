@@ -158,6 +158,7 @@ function buildGroupMessage(
   text: string,
   from: { first_name?: string; username?: string; id: number }
 ) {
+  moderation.setDisplay(from.id, state.mode === "identified", from.username);
   const displayName = from.first_name ?? "کاربر";
   const username = from.username ? `@${from.username}` : "بدون‌نام کاربری";
   const identityLine =
@@ -175,7 +176,7 @@ function buildGroupMessage(
     `موضوع پیام: ${getTopicLabel(state.topic)}`,
     replyLine,
     identityLine,
-    `شناسه کاربر: ${moderation.codeFor(from.id)}`,
+    `شناسه کاربر: ${moderation.labelFor(from.id)}`,
     "",
     "متن پیام:",
     text,
@@ -303,9 +304,9 @@ adminGroup.on("message:text", async (ctx) => {
       }
       // Keep each page comfortably below Telegram's message size limit.
       for (let offset = 0; offset < entries.length; offset += 40) {
-        const lines = entries.slice(offset, offset + 40).map(({ code, until }) =>
-          until === null ? `${code} — بلاک دائمی 🚫`
-            : `${code} — بن موقت، باقی‌مانده: ${formatRemaining(until)} ⏳`
+        const lines = entries.slice(offset, offset + 40).map(({ label, until }) =>
+          until === null ? `${label} — بلاک دائمی 🚫`
+            : `${label} — بن موقت، باقی‌مانده: ${formatRemaining(until)} ⏳`
         );
         await ctx.reply(`فهرست کاربران محدودشده:\n${lines.join("\n")}`);
       }
@@ -315,7 +316,7 @@ adminGroup.on("message:text", async (ctx) => {
     const code = command[3]?.trim();
     const trustedReply = replied?.from?.id === ctx.me.id;
     const replyCode = trustedReply
-      ? (replied.text ?? replied.caption ?? "").match(/شناسه کاربر: (U-[A-F0-9]{12})/)?.[1]
+      ? (replied.text ?? replied.caption ?? "").match(/شناسه کاربر: (\S+)/)?.[1]
       : undefined;
     const uid = code ? moderation.userFor(code)
       : trustedReply ? messageMap.get(replied.message_id) ?? (replyCode ? moderation.userFor(replyCode) : undefined)
@@ -348,13 +349,13 @@ adminGroup.on("message:text", async (ctx) => {
     } catch {
       notified = false;
     }
-    await ctx.reply(`${moderation.codeFor(uid)} ${confirmation}${notified ? "\nکاربر مطلع شد." : "\nارسال اعلان به کاربر ناموفق بود. ⚠️"}`);
+    await ctx.reply(`${moderation.labelFor(uid)} ${confirmation}${notified ? "\nکاربر مطلع شد." : "\nارسال اعلان به کاربر ناموفق بود. ⚠️"}`);
     return;
   }
   if (!replied) return; // ignore normal chatter
 
   const replyCode = replied.from?.id === ctx.me.id
-    ? (replied.text ?? replied.caption ?? "").match(/شناسه کاربر: (U-[A-F0-9]{12})/)?.[1]
+    ? (replied.text ?? replied.caption ?? "").match(/شناسه کاربر: (\S+)/)?.[1]
     : undefined;
   const uid = messageMap.get(replied.message_id) ?? (replyCode ? moderation.userFor(replyCode) : undefined);
   if (!uid) return; // not a tracked bot message
@@ -483,9 +484,11 @@ privateChat.on("message:text", async (ctx) => {
     : undefined;
   if (repliedPromptState) {
     try {
+      const groupText = buildGroupMessage(repliedPromptState, ctx.message.text, ctx.from);
+      await pinnedModeration.save();
       const sent = await ctx.api.sendMessage(
         TARGET_CHANNEL,
-        buildGroupMessage(repliedPromptState, ctx.message.text, ctx.from)
+        groupText
       );
       messageMap.set(sent.message_id, ctx.from.id);
       await ctx.reply(MESSAGE_SENT_TEXT, { reply_markup: mainKeyboard });
@@ -598,9 +601,11 @@ privateChat.on("message:text", async (ctx) => {
   // 3) Expecting the final message text.
   if (state.step === "awaiting_message") {
     try {
+      const groupText = buildGroupMessage(state, ctx.message.text, ctx.from);
+      await pinnedModeration.save();
       const sent = await ctx.api.sendMessage(
         TARGET_CHANNEL,
-        buildGroupMessage(state, ctx.message.text, ctx.from)
+        groupText
       );
       messageMap.set(sent.message_id, ctx.from.id);
       await ctx.reply(MESSAGE_SENT_TEXT, { reply_markup: mainKeyboard });
@@ -639,6 +644,8 @@ privateChat.on("message", async (ctx, next) => {
     const doc = ctx.message?.document;
     if (doc?.mime_type === "application/pdf") {
       try {
+        moderation.setDisplay(ctx.from.id, true, ctx.from.username);
+        await pinnedModeration.save();
         const sent = await ctx.api.forwardMessage(
           TARGET_CHANNEL,
           ctx.chat.id,
@@ -647,7 +654,7 @@ privateChat.on("message", async (ctx, next) => {
         messageMap.set(sent.message_id, ctx.from.id);
         const header = await ctx.api.sendMessage(
           TARGET_CHANNEL,
-          `فایل PDF 📄\nشناسه کاربر: ${moderation.codeFor(ctx.from.id)}`,
+          `فایل PDF 📄\nشناسه کاربر: ${moderation.labelFor(ctx.from.id)}`,
           { reply_to_message_id: sent.message_id }
         );
         messageMap.set(header.message_id, ctx.from.id);

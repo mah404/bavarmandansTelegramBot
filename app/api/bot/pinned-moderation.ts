@@ -45,8 +45,8 @@ export function createPinnedModeration(
 
   function render() {
     const entries = store.list();
-    const lines = entries.map(({ code, until }) => until === null
-      ? `${code} — دائمی 🚫` : `${code} — تا ${new Date(until).toISOString()} ⏳`);
+    const lines = entries.map(({ label, until }) => until === null
+      ? `${label} — دائمی 🚫` : `${label} — تا ${new Date(until).toISOString()} ⏳`);
     const text = `${GUIDE}\nمحدودیت‌های فعال:\n${lines.join("\n") || "فهرست خالی است. ✅"}\n\nاطلاعات بازیابی رمزگذاری‌شده؛ تغییر ندهید:\n${MARKER}${encrypt(store.snapshot())}`;
     if (text.length > 4000) throw new Error("Pinned moderation capacity exceeded");
     return text;

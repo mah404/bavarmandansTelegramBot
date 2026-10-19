@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 export type ModerationSnapshot = {
-  users: [number, string][];
+  users: [number, string, string?][];
   restrictions: [number, number | null][];
 };
 
@@ -9,6 +9,7 @@ export function createModerationStore(now = Date.now) {
   const restrictions = new Map<number, number | null>();
   const codes = new Map<number, string>();
   const users = new Map<string, number>();
+  const labels = new Map<number, string>();
 
   function codeFor(userId: number) {
     let code = codes.get(userId);
@@ -33,12 +34,13 @@ export function createModerationStore(now = Date.now) {
 
   return {
     snapshot(): ModerationSnapshot {
-      return { users: Array.from(codes), restrictions: Array.from(restrictions) };
+      return { users: Array.from(codes, ([id, code]) => [id, code, labels.get(id)]), restrictions: Array.from(restrictions) };
     },
     restore(data: ModerationSnapshot) {
       const validId = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
       if (!Array.isArray(data.users) || !Array.isArray(data.restrictions)
-        || data.users.some(([id, code]) => !validId(id) || typeof code !== "string" || !/^U-[A-F0-9]{12}$/.test(code))
+        || data.users.some(([id, code, label]) => !validId(id) || typeof code !== "string" || !/^U-[A-F0-9]{12}$/.test(code)
+          || (label != null && (typeof label !== "string" || !/^(?:@[A-Za-z0-9_]{1,32}|[0-9]+)$/.test(label))))
         || new Set(data.users.map(([id]) => id)).size !== data.users.length
         || new Set(data.users.map(([, code]) => code)).size !== data.users.length
         || data.restrictions.some(([id, until]) => !validId(id) || !data.users.some(([uid]) => uid === id)
@@ -48,11 +50,27 @@ export function createModerationStore(now = Date.now) {
       codes.clear();
       users.clear();
       restrictions.clear();
-      for (const [id, code] of data.users) { codes.set(id, code); users.set(code, id); }
+      labels.clear();
+      for (const [id, code, label] of data.users) {
+        codes.set(id, code); users.set(code, id);
+        if (label) labels.set(id, label);
+      }
       for (const [id, until] of data.restrictions) restrictions.set(id, until);
     },
     codeFor,
-    userFor: (code: string) => users.get(code.toUpperCase()),
+    labelFor(userId: number) {
+      return labels.get(userId) ?? `#${codeFor(userId).replace("-", "_")}`;
+    },
+    setDisplay(userId: number, identified: boolean, username?: string) {
+      codeFor(userId);
+      if (identified) labels.set(userId, username ? `@${username}` : String(userId));
+      else labels.delete(userId);
+    },
+    userFor(value: string) {
+      const byCode = users.get(value.replace(/^#?U_/i, "U-").toUpperCase());
+      if (byCode) return byCode;
+      return Array.from(labels).find(([, label]) => label.toLowerCase() === value.toLowerCase())?.[0];
+    },
     status,
     block(userId: number) {
       codeFor(userId);
@@ -66,7 +84,7 @@ export function createModerationStore(now = Date.now) {
     list() {
       return Array.from(restrictions.keys()).flatMap((userId) => {
         const until = status(userId);
-        return until === undefined ? [] : [{ code: codeFor(userId), until }];
+        return until === undefined ? [] : [{ code: codeFor(userId), label: labels.get(userId) ?? `#${codeFor(userId).replace("-", "_")}`, until }];
       });
     },
   };
