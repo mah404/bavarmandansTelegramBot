@@ -95,7 +95,19 @@ test('group commands enforce admin checks, notify, list private codes, and guard
   admin = false;
   await message('/block ' + code);
   assert.equal(moderation.status(42), undefined);
+  await message('/blockList', true, {
+    sender_chat: { id: -1002825832693, type: 'supergroup', title: 'Support' },
+  });
+  assert.ok(calls.some(c => c.method === 'pinChatMessage'));
+  assert.ok(pinned.text.includes('/blockList') && pinned.text.includes('/ban1h'));
+  assert.ok(!calls.some(c => c.method === 'getChatMember'));
+  assert.equal(moderation.status(42), undefined);
   admin = true;
+  await message('/block ' + code, true, {
+    sender_chat: { id: -100777, type: 'channel', title: 'Other channel' },
+  });
+  assert.equal(moderation.status(42), undefined);
+  assert.ok(!calls.some(c => c.method === 'getChat'));
   await message('/block@test_bot ' + code);
   assert.equal(moderation.status(42), null);
   assert.ok(textCalls().some(c => c.payload.chat_id === 42));
@@ -116,6 +128,11 @@ test('group commands enforce admin checks, notify, list private codes, and guard
   assert.ok(!textCalls()[0].payload.text.includes('Private Name'));
   await message('/unblock ' + code);
   assert.equal(moderation.status(42), undefined);
+  await message('/block ' + code, true, {
+    sender_chat: { id: -1002825832693, type: 'supergroup', title: 'Support' },
+  });
+  assert.equal(moderation.status(42), null);
+  await message('/unblock ' + code);
   await message('/ban1h', true, { reply_to_message: {
     message_id: 100, from: bot.botInfo, text: groupMessage,
   } });

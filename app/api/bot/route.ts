@@ -264,14 +264,21 @@ adminGroup.on("message:text", async (ctx, next) => {
   const isCommand = /^\/(block|unblock|ban1h|blocklist)(?:@\w+)?(?:\s|$)/i.test(ctx.message.text);
   if (!isCommand && !ctx.message.reply_to_message) return next();
   if (isCommand) {
-    if (!ctx.from || ctx.message.sender_chat) {
-      await ctx.reply("برای اجرای دستور، با حساب شخصی ادمین پیام دهید. ⚠️");
+    const senderChat = ctx.message.sender_chat;
+    // Telegram identifies anonymous group administrators by the group itself.
+    const anonymousGroupAdmin = senderChat?.id === ctx.chat.id
+      && (ctx.chat.type === "group" || ctx.chat.type === "supergroup");
+    if (senderChat && !anonymousGroupAdmin) {
+      await ctx.reply("دستور را با حساب ادمین یا به نام خودِ همین گروه ارسال کنید. ⚠️");
       return;
     }
-    const member = await ctx.api.getChatMember(ctx.chat.id, ctx.from.id);
-    if (member.status !== "creator" && member.status !== "administrator") {
-      await ctx.reply("این دستور فقط برای ادمین‌های گروه فعال است. ⚠️");
-      return;
+    if (!anonymousGroupAdmin) {
+      if (!ctx.from) return;
+      const member = await ctx.api.getChatMember(ctx.chat.id, ctx.from.id);
+      if (member.status !== "creator" && member.status !== "administrator") {
+        await ctx.reply("این دستور فقط برای ادمین‌های گروه فعال است. ⚠️");
+        return;
+      }
     }
   }
   try {

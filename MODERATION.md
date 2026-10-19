@@ -11,8 +11,9 @@ message with command reminders at the top.
 - `/blockList`: list active restrictions and refresh the pinned summary.
 
 Reply to a bot-relayed user message, or append its `U-...` code to a command.
-Only group administrators may use moderation commands. Anonymous administrator
-messages are rejected; send commands using your personal administrator account.
+Only group administrators may use moderation commands. Anonymous administrators
+sending as the support group itself are also accepted. Messages sent as another
+channel or group are rejected.
 
 The pinned message holds an authenticated, encrypted snapshot of user-code
 mappings and restrictions. User names and Telegram IDs are not printed in it.
