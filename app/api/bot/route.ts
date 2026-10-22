@@ -33,10 +33,33 @@ type UserState =
       replyPreference?: ReplyPreference;
     };
 
-const userStates = new Map<number, UserState>();      // per-user flow state (only for private chats)
 const messageMap = new Map<number, number>();         // groupMessageId -> userId (for admin replies)
 const moderation = createModerationStore();
 const pinnedModeration = createPinnedModeration(bot.api, TARGET_CHANNEL, token, moderation, () => bot.botInfo.id);
+const userStates = {
+  get(id: number): UserState | undefined {
+    const flow = moderation.flowFor(id);
+    if (!flow) return undefined;
+    if (flow === "file") return { step: "awaiting_file" };
+    const [step, mode, topic, preference] = flow.split(":");
+    if (mode !== "identified" && mode !== "anonymous") return undefined;
+    if (step === "topic") return { step: "awaiting_topic", mode };
+    if (step === "reply") return { step: "awaiting_reply_preference", mode, topic: "question" };
+    if (step === "message" && topic === "feedback") return { step: "awaiting_message", mode, topic };
+    if (step === "message" && topic === "question" && (preference === "telegram" || preference === "current_app")) {
+      return { step: "awaiting_message", mode, topic, replyPreference: preference };
+    }
+    return undefined;
+  },
+  set(id: number, state: UserState) {
+    const flow = state.step === "awaiting_file" ? "file"
+      : state.step === "awaiting_topic" ? `topic:${state.mode}`
+      : state.step === "awaiting_reply_preference" ? `reply:${state.mode}`
+      : `message:${state.mode}:${state.topic}:${state.replyPreference ?? "none"}`;
+    moderation.setFlow(id, flow);
+  },
+  delete(id: number) { moderation.setFlow(id); },
+};
 
 /* ─────────────────────  UI  ───────────────────── */
 const MENU_IDENTIFIED_MESSAGE = "💬 ارسال پیام به صورت شناس";
@@ -48,8 +71,6 @@ const MENU_WEBSITE = "🌐 لینک سایت";
 const TOPIC_QUESTION = "طرح سوال";
 const TOPIC_FEEDBACK = "انتقادات و پیشنهادات";
 
-const REPLY_TELEGRAM = "> در تلگرام هستم";
-const REPLY_CURRENT_APP = "> در برنامه جاری";
 const START_TEXT = `با عرض سلام مجدد،
 
 جهت برقراری ارتباط یکی از گزینه‌های موجود را انتخاب نمایید. ✨
@@ -69,44 +90,18 @@ const mainKeyboard = new Keyboard()
   .persistent(true)
   .placeholder("یکی از گزینه‌ها را انتخاب کنید…");
 
-const topicKeyboard = new Keyboard()
-  .text(TOPIC_QUESTION)
-  .text(TOPIC_FEEDBACK)
-  .resized()
-  .persistent(true)
-  .placeholder("یکی از گزینه‌های زیر را انتخاب نمایید");
+const topicKeyboard = new Keyboard([
+  [{ text: TOPIC_QUESTION }, { text: TOPIC_FEEDBACK }],
+  ...mainKeyboard.build(),
+]).resized().persistent(true);
 
-const replyPreferenceKeyboard = new Keyboard()
-  .text(REPLY_TELEGRAM)
-  .text(REPLY_CURRENT_APP)
-  .resized()
-  .persistent(true)
-  .placeholder("مایل به دریافت پاسخ");
-
-const removeKeyboard = { remove_keyboard: true } as const;
-
-function topicInlineKeyboard(mode: MessageMode) {
-  return new InlineKeyboard()
-    .text(TOPIC_QUESTION, `topic:${mode}:question`)
-    .text(TOPIC_FEEDBACK, `topic:${mode}:feedback`);
-}
-
-function replyPreferenceInlineKeyboard(mode: MessageMode) {
-  return new InlineKeyboard()
-    .text("در تلگرام هستم", `reply:${mode}:telegram`)
-    .text("در برنامه جاری", `reply:${mode}:current_app`);
-}
-
-function forceReplyMarkup(placeholder: string) {
-  return {
-    force_reply: true,
-    selective: true,
-    input_field_placeholder: placeholder,
-  } as const;
-}
+const replyPreferenceKeyboard = new Keyboard([
+  [{ text: "تلگرام" }, { text: "برنامه جاری" }],
+  ...mainKeyboard.build(),
+]).resized().persistent(true);
 
 const SELECT_OPTION_TEXT = "یکی از گزینه‌های زیر را انتخاب نمایید. ▫️";
-const ASK_REPLY_PREFERENCE_TEXT = "مایل به دریافت پاسخ 📨";
+const ASK_REPLY_PREFERENCE_TEXT = "مایل به دریافت پاسخ در 📨";
 const MESSAGE_SENT_TEXT = "پیام شما ارسال گردید. ✅";
 const MESSAGE_SEND_ERROR_TEXT = "خطا در ارسال پیام. دوباره تلاش کنید. ⚠️";
 
@@ -185,11 +180,8 @@ function buildGroupMessage(
     .join("\n");
 }
 
-function buildFinalPrompt(state: Extract<UserState, { step: "awaiting_message" }>) {
-  // The reply carries the choices in a link entity across server restarts.
-  const flow = ["flow", state.mode, state.topic, state.replyPreference ?? "none"].join("_");
-  const url = `https://t.me/${bot.botInfo.username}?start=${flow}`;
-  return `پیام خود را وارد نمایید. <a href="${url}">📝</a>`;
+function buildFinalPrompt() {
+  return "پیام خود را وارد نمایید. 📝";
 }
 
 function parseFinalPrompt(
@@ -341,8 +333,8 @@ adminGroup.on("message:text", async (ctx) => {
       notification = "محدودیت ارسال پیام شما برطرف شد. برای شروع /start را بزنید. ✅";
       confirmation = "از محدودیت خارج شد. ✅";
     }
-    await pinnedModeration.save();
     userStates.delete(uid);
+    await pinnedModeration.save();
     let notified = true;
     try {
       await ctx.api.sendMessage(uid, notification);
@@ -383,6 +375,7 @@ privateChat.use(async (ctx, next) => {
       moderation.codeFor(ctx.from!.id);
       await pinnedModeration.save();
       await next();
+      await pinnedModeration.save();
     });
   } catch {
     if (ctx.callbackQuery) await ctx.answerCallbackQuery({ text: "دسترسی موقتاً برقرار نیست. لطفاً کمی بعد تلاش کنید. ⚠️", show_alert: true });
@@ -423,7 +416,7 @@ privateChat.on("callback_query:data", async (ctx) => {
       });
       await ctx.answerCallbackQuery();
       await ctx.reply(ASK_REPLY_PREFERENCE_TEXT, {
-        reply_markup: replyPreferenceInlineKeyboard(mode),
+        reply_markup: replyPreferenceKeyboard,
       });
       return;
     }
@@ -436,9 +429,9 @@ privateChat.on("callback_query:data", async (ctx) => {
       };
       userStates.set(ctx.from.id, nextState);
       await ctx.answerCallbackQuery();
-      await ctx.reply(buildFinalPrompt(nextState), {
-        parse_mode: "HTML",
-        reply_markup: forceReplyMarkup(`پیام ${getModeLabel(mode)} خود را وارد نمایید. 📝`),
+      await pinnedModeration.save();
+      await ctx.reply(buildFinalPrompt(), {
+        reply_markup: mainKeyboard,
       });
       return;
     }
@@ -458,9 +451,9 @@ privateChat.on("callback_query:data", async (ctx) => {
     };
     userStates.set(ctx.from.id, nextState);
     await ctx.answerCallbackQuery();
-    await ctx.reply(buildFinalPrompt(nextState), {
-      parse_mode: "HTML",
-      reply_markup: forceReplyMarkup("پیام خود را وارد نمایید. 📝"),
+    await pinnedModeration.save();
+    await ctx.reply(buildFinalPrompt(), {
+      reply_markup: mainKeyboard,
     });
     return;
   }
@@ -482,7 +475,7 @@ privateChat.on("message:text", async (ctx) => {
   const repliedPromptState = replied?.from?.id === ctx.me.id
     ? parseFinalPrompt(replied.text, replied.entities)
     : undefined;
-  if (repliedPromptState) {
+  if (repliedPromptState && !state && !MENU_TEXTS.has(text)) {
     try {
       const groupText = buildGroupMessage(repliedPromptState, ctx.message.text, ctx.from);
       await pinnedModeration.save();
@@ -506,15 +499,15 @@ privateChat.on("message:text", async (ctx) => {
       return ctx.reply("لطفاً فایل PDF خود را ارسال کنید. 📄", { reply_markup: mainKeyboard });
     }
     if (text === MENU_IDENTIFIED_MESSAGE) {
-      userStates.delete(ctx.from.id);
+      userStates.set(ctx.from.id, { step: "awaiting_topic", mode: "identified" });
       return ctx.reply(SELECT_OPTION_TEXT, {
-        reply_markup: topicInlineKeyboard("identified"),
+        reply_markup: topicKeyboard,
       });
     }
     if (text === MENU_ANONYMOUS_MESSAGE) {
-      userStates.delete(ctx.from.id);
+      userStates.set(ctx.from.id, { step: "awaiting_topic", mode: "anonymous" });
       return ctx.reply(SELECT_OPTION_TEXT, {
-        reply_markup: topicInlineKeyboard("anonymous"),
+        reply_markup: topicKeyboard,
       });
     }
     if (text === MENU_ABOUT) {
@@ -551,7 +544,7 @@ privateChat.on("message:text", async (ctx) => {
         topic: "question",
       });
       return ctx.reply(ASK_REPLY_PREFERENCE_TEXT, {
-        reply_markup: replyPreferenceInlineKeyboard(state.mode),
+        reply_markup: replyPreferenceKeyboard,
       });
     }
 
@@ -563,9 +556,9 @@ privateChat.on("message:text", async (ctx) => {
       };
       userStates.set(ctx.from.id, nextState);
 
-      return ctx.reply(buildFinalPrompt(nextState), {
-        parse_mode: "HTML",
-        reply_markup: forceReplyMarkup(`پیام ${getModeLabel(state.mode)} خود را وارد نمایید. 📝`),
+      await pinnedModeration.save();
+      return ctx.reply(buildFinalPrompt(), {
+        reply_markup: mainKeyboard,
       });
     }
 
@@ -592,9 +585,9 @@ privateChat.on("message:text", async (ctx) => {
     };
     userStates.set(ctx.from.id, nextState);
 
-    return ctx.reply(buildFinalPrompt(nextState), {
-      parse_mode: "HTML",
-      reply_markup: forceReplyMarkup("پیام خود را وارد نمایید. 📝"),
+    await pinnedModeration.save();
+    return ctx.reply(buildFinalPrompt(), {
+      reply_markup: mainKeyboard,
     });
   }
 
@@ -690,7 +683,7 @@ privateChat.on("message", async (ctx, next) => {
 
   if (state.step === "awaiting_message") {
     await ctx.reply("لطفاً پیام خود را به صورت متن ارسال کنید. 📝", {
-      reply_markup: removeKeyboard,
+      reply_markup: mainKeyboard,
     });
     return;
   }

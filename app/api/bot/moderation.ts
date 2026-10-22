@@ -3,13 +3,17 @@ import { randomBytes } from "node:crypto";
 export type ModerationSnapshot = {
   users: [number, string, string?][];
   restrictions: [number, number | null][];
+  flows?: [number, string][];
 };
+
+const FLOW_PATTERN = /^(?:file|(?:topic|reply):(identified|anonymous)|message:(identified|anonymous):(?:feedback:none|question:(?:telegram|current_app)))$/;
 
 export function createModerationStore(now = Date.now) {
   const restrictions = new Map<number, number | null>();
   const codes = new Map<number, string>();
   const users = new Map<string, number>();
   const labels = new Map<number, string>();
+  const flows = new Map<number, string>();
 
   function codeFor(userId: number) {
     let code = codes.get(userId);
@@ -34,7 +38,7 @@ export function createModerationStore(now = Date.now) {
 
   return {
     snapshot(): ModerationSnapshot {
-      return { users: Array.from(codes, ([id, code]) => [id, code, labels.get(id)]), restrictions: Array.from(restrictions) };
+      return { users: Array.from(codes, ([id, code]) => [id, code, labels.get(id)]), restrictions: Array.from(restrictions), flows: Array.from(flows) };
     },
     restore(data: ModerationSnapshot) {
       const validId = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -44,18 +48,30 @@ export function createModerationStore(now = Date.now) {
         || new Set(data.users.map(([id]) => id)).size !== data.users.length
         || new Set(data.users.map(([, code]) => code)).size !== data.users.length
         || data.restrictions.some(([id, until]) => !validId(id) || !data.users.some(([uid]) => uid === id)
-          || (until !== null && (typeof until !== "number" || !Number.isFinite(until))))) {
+          || (until !== null && (typeof until !== "number" || !Number.isFinite(until))))
+        || (data.flows !== undefined && (!Array.isArray(data.flows)
+          || data.flows.some(([id, flow]) => !validId(id) || !data.users.some(([uid]) => uid === id)
+            || typeof flow !== "string" || !FLOW_PATTERN.test(flow))))) {
         throw new Error("Invalid moderation snapshot");
       }
       codes.clear();
       users.clear();
       restrictions.clear();
       labels.clear();
+      flows.clear();
       for (const [id, code, label] of data.users) {
         codes.set(id, code); users.set(code, id);
         if (label) labels.set(id, label);
       }
       for (const [id, until] of data.restrictions) restrictions.set(id, until);
+      for (const [id, flow] of data.flows ?? []) flows.set(id, flow);
+    },
+    flowFor: (userId: number) => flows.get(userId),
+    setFlow(userId: number, flow?: string) {
+      if (flow === undefined) { flows.delete(userId); return; }
+      if (!FLOW_PATTERN.test(flow)) throw new Error("Invalid conversation flow");
+      codeFor(userId);
+      flows.set(userId, flow);
     },
     codeFor,
     labelFor(userId: number) {

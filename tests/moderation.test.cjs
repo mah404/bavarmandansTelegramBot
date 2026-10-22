@@ -252,3 +252,97 @@ test('pinned message restores codes and blocks after restart, with encrypted aut
   }));
   assert.equal(again.userFor(code), 123456789);
 });
+
+test('main menu stays available and flows recover across fresh server instances', async () => {
+  let pinned;
+  let sequence = 0;
+  let messageId = 0;
+  const calls = [];
+  function restart() {
+    const runtime = load('route.ts', {
+      './moderation': load('moderation.ts'),
+      './pinned-moderation': load('pinned-moderation.ts'),
+    }, '\nexport { bot };');
+    runtime.bot.botInfo = { id: 999, is_bot: true, first_name: 'Bot', username: 'test_bot' };
+    runtime.bot.api.config.use(async (_previous, method, payload) => {
+      calls.push({ method, payload });
+      if (method === 'getChat') return { ok: true, result: { pinned_message: pinned } };
+      if (method === 'getChatMember') return { ok: true, result: { status: 'administrator' } };
+      if (method === 'editMessageText') pinned.text = payload.text;
+      const result = { message_id: ++messageId, from: runtime.bot.botInfo, text: payload.text };
+      if (method === 'sendMessage' && payload.text.includes('BOT_MODERATION_V1:')) pinned = result;
+      return { ok: true, result };
+    });
+    return runtime.bot;
+  }
+  async function send(text, group = false, extra = {}) {
+    calls.length = 0;
+    // Every request runs on a new instance, including the final unthreaded text.
+    await restart().handleUpdate({ update_id: ++sequence, message: {
+      message_id: sequence, date: 0,
+      chat: { id: group ? -1002825832693 : 42, type: group ? 'supergroup' : 'private' },
+      from: { id: group ? 7 : 42, is_bot: false, first_name: 'User', username: 'example_user' },
+      ...(text === undefined ? {} : { text }), ...extra,
+    } });
+  }
+  const mainLabels = [
+    '💬 ارسال پیام به صورت شناس', '🔒 ارسال پیام به صورت ناشناس',
+    '📄 ارسال فایل پی‌دی‌اف', '🌐 لینک سایت', 'ℹ️ درباره ما',
+  ];
+  function assertMenu() {
+    const reply = calls.findLast(c => c.method === 'sendMessage' && c.payload.chat_id === 42);
+    const buttons = reply.payload.reply_markup.keyboard.flat().map(b => b.text);
+    for (const label of mainLabels) assert.ok(buttons.includes(label), label);
+    assert.equal(reply.payload.reply_markup.force_reply, undefined);
+    assert.equal(reply.payload.reply_markup.remove_keyboard, undefined);
+    return reply;
+  }
+  const relayed = () => calls.filter(c => c.method === 'sendMessage' && c.payload.chat_id === '-1002825832693');
+  await send('/blockList', true);
+  for (const mode of ['identified', 'anonymous']) {
+    for (const topic of ['feedback', 'telegram', 'current_app']) {
+      await send(mainLabels[mode === 'identified' ? 0 : 1]);
+      assertMenu();
+      await send(topic === 'feedback' ? 'انتقادات و پیشنهادات' : 'طرح سوال');
+      assertMenu();
+      if (topic !== 'feedback') {
+        const prompt = assertMenu().payload;
+        assert.equal(prompt.text, 'مایل به دریافت پاسخ در 📨');
+        const choices = Array.from(prompt.reply_markup.keyboard[0], button => button.text);
+        assert.deepEqual(choices, ['تلگرام', 'برنامه جاری']);
+        await send(topic === 'telegram' ? 'تلگرام' : 'برنامه جاری');
+        assertMenu();
+      }
+      await send('hello');
+      assertMenu();
+      assert.equal(relayed().length, 1);
+      assert.ok(relayed()[0].payload.text.includes(mode === 'identified' ? '👤 شناس' : '🔒 ناشناس'));
+      if (topic !== 'feedback') assert.ok(relayed()[0].payload.text.includes(topic === 'telegram' ? '📲' : '💬'));
+      await send('already sent');
+      assert.equal(relayed().length, 0);
+      assertMenu();
+    }
+  }
+  await send(mainLabels[0]);
+  await send('طرح سوال');
+  await send('در تلگرام هستم');
+  // A main-menu button sent as a reply to a legacy ForceReply prompt is navigation.
+  await send(mainLabels[2], false, { reply_to_message: {
+    message_id: 123, from: { id: 999 }, text: 'پیام خود را وارد نمایید. 📝',
+    entities: [{ type: 'text_link', offset: 0, length: 1, url: 'https://t.me/test_bot?start=flow_identified_question_telegram' }],
+  } });
+  assert.equal(relayed().length, 0);
+  assert.ok(assertMenu().payload.text.includes('PDF'));
+  await send('text instead of PDF');
+  assertMenu();
+  assert.equal(relayed().length, 0);
+  await send(mainLabels[1]);
+  await send('انتقادات و پیشنهادات');
+  await send(undefined, false, { sticker: { file_id: 'sticker', file_unique_id: 'sticker' } });
+  assertMenu();
+  await send(mainLabels[4]);
+  assertMenu();
+  assert.equal(relayed().length, 0);
+  await send('/start');
+  assertMenu();
+});
