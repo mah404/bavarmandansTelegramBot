@@ -258,6 +258,7 @@ test('main menu stays available and flows recover across fresh server instances'
   let sequence = 0;
   let messageId = 0;
   const calls = [];
+  let visibleKeyboard;
   function restart() {
     const runtime = load('route.ts', {
       './moderation': load('moderation.ts'),
@@ -266,6 +267,9 @@ test('main menu stays available and flows recover across fresh server instances'
     runtime.bot.botInfo = { id: 999, is_bot: true, first_name: 'Bot', username: 'test_bot' };
     runtime.bot.api.config.use(async (_previous, method, payload) => {
       calls.push({ method, payload });
+      if (method === 'sendMessage' && payload.chat_id === 42 && payload.reply_markup?.keyboard) {
+        visibleKeyboard = payload.reply_markup.keyboard;
+      }
       if (method === 'getChat') return { ok: true, result: { pinned_message: pinned } };
       if (method === 'getChatMember') return { ok: true, result: { status: 'administrator' } };
       if (method === 'editMessageText') pinned.text = payload.text;
@@ -291,7 +295,7 @@ test('main menu stays available and flows recover across fresh server instances'
   ];
   function assertMenu() {
     const reply = calls.findLast(c => c.method === 'sendMessage' && c.payload.chat_id === 42);
-    const buttons = reply.payload.reply_markup.keyboard.flat().map(b => b.text);
+    const buttons = visibleKeyboard.flat().map(b => b.text);
     for (const label of mainLabels) assert.ok(buttons.includes(label), label);
     assert.equal(reply.payload.reply_markup.force_reply, undefined);
     assert.equal(reply.payload.reply_markup.remove_keyboard, undefined);
@@ -299,17 +303,27 @@ test('main menu stays available and flows recover across fresh server instances'
   }
   const relayed = () => calls.filter(c => c.method === 'sendMessage' && c.payload.chat_id === '-1002825832693');
   await send('/blockList', true);
+  await send('/start');
+  assertMenu();
   for (const mode of ['identified', 'anonymous']) {
     for (const topic of ['feedback', 'telegram', 'current_app']) {
       await send(mainLabels[mode === 'identified' ? 0 : 1]);
-      assertMenu();
+      const topics = assertMenu().payload.reply_markup;
+      assert.equal(topics.keyboard, undefined);
+      assert.deepEqual(Array.from(topics.inline_keyboard[0], b => b.callback_data), [
+        `topic:${mode}:question`, `topic:${mode}:feedback`,
+      ]);
       await send(topic === 'feedback' ? 'انتقادات و پیشنهادات' : 'طرح سوال');
       assertMenu();
       if (topic !== 'feedback') {
         const prompt = assertMenu().payload;
         assert.equal(prompt.text, 'مایل به دریافت پاسخ در 📨');
-        const choices = Array.from(prompt.reply_markup.keyboard[0], button => button.text);
+        assert.equal(prompt.reply_markup.keyboard, undefined);
+        const choices = Array.from(prompt.reply_markup.inline_keyboard[0], button => button.text);
         assert.deepEqual(choices, ['تلگرام', 'برنامه جاری']);
+        assert.deepEqual(Array.from(prompt.reply_markup.inline_keyboard[0], b => b.callback_data), [
+          `reply:${mode}:telegram`, `reply:${mode}:current_app`,
+        ]);
         await send(topic === 'telegram' ? 'تلگرام' : 'برنامه جاری');
         assertMenu();
       }

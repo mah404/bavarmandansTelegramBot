@@ -90,15 +90,17 @@ const mainKeyboard = new Keyboard()
   .persistent(true)
   .placeholder("یکی از گزینه‌ها را انتخاب کنید…");
 
-const topicKeyboard = new Keyboard([
-  [{ text: TOPIC_QUESTION }, { text: TOPIC_FEEDBACK }],
-  ...mainKeyboard.build(),
-]).resized().persistent(true);
+function topicKeyboard(mode: MessageMode) {
+  return new InlineKeyboard()
+    .text(TOPIC_QUESTION, `topic:${mode}:question`)
+    .text(TOPIC_FEEDBACK, `topic:${mode}:feedback`);
+}
 
-const replyPreferenceKeyboard = new Keyboard([
-  [{ text: "تلگرام" }, { text: "برنامه جاری" }],
-  ...mainKeyboard.build(),
-]).resized().persistent(true);
+function replyPreferenceKeyboard(mode: MessageMode) {
+  return new InlineKeyboard()
+    .text("تلگرام", `reply:${mode}:telegram`)
+    .text("برنامه جاری", `reply:${mode}:current_app`);
+}
 
 const SELECT_OPTION_TEXT = "یکی از گزینه‌های زیر را انتخاب نمایید. ▫️";
 const ASK_REPLY_PREFERENCE_TEXT = "مایل به دریافت پاسخ در 📨";
@@ -416,7 +418,7 @@ privateChat.on("callback_query:data", async (ctx) => {
       });
       await ctx.answerCallbackQuery();
       await ctx.reply(ASK_REPLY_PREFERENCE_TEXT, {
-        reply_markup: replyPreferenceKeyboard,
+        reply_markup: replyPreferenceKeyboard(mode),
       });
       return;
     }
@@ -501,13 +503,13 @@ privateChat.on("message:text", async (ctx) => {
     if (text === MENU_IDENTIFIED_MESSAGE) {
       userStates.set(ctx.from.id, { step: "awaiting_topic", mode: "identified" });
       return ctx.reply(SELECT_OPTION_TEXT, {
-        reply_markup: topicKeyboard,
+        reply_markup: topicKeyboard("identified"),
       });
     }
     if (text === MENU_ANONYMOUS_MESSAGE) {
       userStates.set(ctx.from.id, { step: "awaiting_topic", mode: "anonymous" });
       return ctx.reply(SELECT_OPTION_TEXT, {
-        reply_markup: topicKeyboard,
+        reply_markup: topicKeyboard("anonymous"),
       });
     }
     if (text === MENU_ABOUT) {
@@ -544,7 +546,7 @@ privateChat.on("message:text", async (ctx) => {
         topic: "question",
       });
       return ctx.reply(ASK_REPLY_PREFERENCE_TEXT, {
-        reply_markup: replyPreferenceKeyboard,
+        reply_markup: replyPreferenceKeyboard(state.mode),
       });
     }
 
@@ -563,7 +565,7 @@ privateChat.on("message:text", async (ctx) => {
     }
 
     return ctx.reply(SELECT_OPTION_TEXT, {
-      reply_markup: topicKeyboard,
+      reply_markup: topicKeyboard(state.mode),
     });
   }
 
@@ -573,7 +575,7 @@ privateChat.on("message:text", async (ctx) => {
 
     if (!replyPreference) {
       return ctx.reply(SELECT_OPTION_TEXT, {
-        reply_markup: replyPreferenceKeyboard,
+        reply_markup: replyPreferenceKeyboard(state.mode),
       });
     }
 
@@ -669,14 +671,14 @@ privateChat.on("message", async (ctx, next) => {
 
   if (state.step === "awaiting_topic") {
     await ctx.reply(SELECT_OPTION_TEXT, {
-      reply_markup: topicKeyboard,
+      reply_markup: topicKeyboard(state.mode),
     });
     return;
   }
 
   if (state.step === "awaiting_reply_preference") {
     await ctx.reply(SELECT_OPTION_TEXT, {
-      reply_markup: replyPreferenceKeyboard,
+      reply_markup: replyPreferenceKeyboard(state.mode),
     });
     return;
   }
